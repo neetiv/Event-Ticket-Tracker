@@ -81,10 +81,16 @@ export async function checkAndAlert(
     ? (snapshot.url.includes("seatgeek") ? "SeatGeek" : "Ticketmaster")
     : "FIFA Tickets";
 
+  const method = settings.alertMethod || "ntfy";
+  const sendViaNtfy = (method === "ntfy" || method === "both") && settings.ntfyTopic;
+  const sendViaSms = (method === "sms" || method === "both") && settings.smsGatewayEmail;
+
   await Promise.all([
-    sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, clickUrl, priority, sourceName),
-    settings.smsGatewayEmail
-      ? sendSmsGateway(settings.smsGatewayEmail, title, clickUrl)
+    sendViaNtfy
+      ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, clickUrl, priority, sourceName)
+      : Promise.resolve(),
+    sendViaSms
+      ? sendSmsGateway(settings.smsGatewayEmail!, title, clickUrl)
       : Promise.resolve(),
   ]);
 

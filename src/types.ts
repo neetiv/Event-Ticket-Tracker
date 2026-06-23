@@ -22,6 +22,7 @@ export interface PriceSnapshot {
 }
 
 export interface UserSettings {
+  alertMethod: "ntfy" | "sms" | "both";
   ntfyTopic: string;
   smsGatewayEmail?: string;
 }

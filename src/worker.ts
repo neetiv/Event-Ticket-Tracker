@@ -1,6 +1,6 @@
 import { Env, WatchedMatch } from "./types";
 import { FAST_MODE_START } from "./config";
-import { fetchTicketmasterPrice, searchTicketmasterEvents } from "./sources/ticketmaster";
+import { fetchTicketmasterPrice, searchTicketmasterEvents, searchLocalEvents } from "./sources/ticketmaster";
 import { fetchSeatGeekPrice } from "./sources/seatgeek";
 import { savePrice, getWatches, addWatch, removeWatch, getSettings, saveSettings } from "./storage";
 import { checkAndAlert } from "./alerts";
@@ -91,10 +91,23 @@ export default {
     // GET /api/search?q=world+cup
     if (path === "/api/search" && request.method === "GET") {
       const query = url.searchParams.get("q") || "FIFA World Cup 2026";
+      const city = url.searchParams.get("city") || undefined;
       if (!env.TICKETMASTER_API_KEY) {
         return jsonResponse({ error: "Ticketmaster API key not configured" }, 500);
       }
-      const results = await searchTicketmasterEvents(query, env.TICKETMASTER_API_KEY);
+      const results = await searchTicketmasterEvents(query, env.TICKETMASTER_API_KEY, city);
+      return jsonResponse({ results });
+    }
+
+    // --- Local events search ---
+    // GET /api/events?city=Seattle&radius=50
+    if (path === "/api/events" && request.method === "GET") {
+      const city = url.searchParams.get("city") || undefined;
+      const radius = url.searchParams.get("radius") || "50";
+      if (!env.TICKETMASTER_API_KEY) {
+        return jsonResponse({ error: "Ticketmaster API key not configured" }, 500);
+      }
+      const results = await searchLocalEvents(env.TICKETMASTER_API_KEY, city, radius);
       return jsonResponse({ results });
     }
 
@@ -132,6 +145,24 @@ export default {
       const settings = await readJson(request);
       await saveSettings(env, settings);
       return jsonResponse({ ok: true });
+    }
+
+    // --- Price ingestion from scraper ---
+    // POST /api/ingest { prices: PriceSnapshot[] }
+    if (path === "/api/ingest" && request.method === "POST") {
+      const body = await readJson(request);
+      const prices = body.prices || [];
+      const watches = await getWatches(env);
+      let saved = 0;
+      for (const snapshot of prices) {
+        await savePrice(env, snapshot);
+        const match = watches.find((w) => w.slug === snapshot.matchSlug);
+        if (match) {
+          await checkAndAlert(env, match, snapshot);
+        }
+        saved++;
+      }
+      return jsonResponse({ ok: true, saved });
     }
 
     // --- Price history ---

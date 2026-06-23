@@ -57,7 +57,8 @@ export interface SearchResult {
 
 export async function searchTicketmasterEvents(
   query: string,
-  apiKey: string
+  apiKey: string,
+  city?: string
 ): Promise<SearchResult[]> {
   const params = new URLSearchParams({
     apikey: apiKey,
@@ -66,6 +67,7 @@ export async function searchTicketmasterEvents(
     size: "50",
     sort: "date,asc",
   });
+  if (city) params.set("city", city);
 
   const res = await fetch(`${BASE_URL}.json?${params}`);
   if (!res.ok) {
@@ -74,7 +76,54 @@ export async function searchTicketmasterEvents(
   }
 
   const data: any = await res.json();
-  const events = data?._embedded?.events || [];
+  const events = (data?._embedded?.events || []).filter((e: any) => {
+    const name: string = (e.name || "").toLowerCase();
+    return name.startsWith("world cup:") || name.startsWith("world cup round");
+  });
+
+  return events.map((e: any) => {
+    const venue = e._embedded?.venues?.[0];
+    const ranges = e.priceRanges;
+    return {
+      name: e.name,
+      eventId: e.id,
+      date: e.dates?.start?.dateTime || e.dates?.start?.localDate || "",
+      venue: venue
+        ? `${venue.name}, ${venue.city?.name || ""}`
+        : "Unknown venue",
+      url: e.url || "",
+      minPrice: ranges?.length > 0 ? Math.min(...ranges.map((r: any) => r.min)) : null,
+      maxPrice: ranges?.length > 0 ? Math.max(...ranges.map((r: any) => r.max)) : null,
+    };
+  });
+}
+
+export async function searchLocalEvents(
+  apiKey: string,
+  city?: string,
+  radius?: string
+): Promise<SearchResult[]> {
+  const params = new URLSearchParams({
+    apikey: apiKey,
+    keyword: "World Cup 2026",
+    size: "50",
+    sort: "date,asc",
+  });
+  if (city) params.set("city", city);
+  if (radius) params.set("radius", radius);
+  params.set("unit", "miles");
+
+  const res = await fetch(`${BASE_URL}.json?${params}`);
+  if (!res.ok) {
+    console.error(`Ticketmaster events search error: ${res.status}`);
+    return [];
+  }
+
+  const data: any = await res.json();
+  const events = (data?._embedded?.events || []).filter((e: any) => {
+    const name: string = (e.name || "").toLowerCase();
+    return !name.startsWith("world cup:") && !name.startsWith("world cup round");
+  });
 
   return events.map((e: any) => {
     const venue = e._embedded?.venues?.[0];

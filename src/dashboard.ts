@@ -143,6 +143,7 @@ function renderTabs() {
     html += '<button class="tab'+(w.slug===activeView?' active':'')+'" data-view="'+w.slug+'">'+w.name+'</button>';
   });
   html += '<button class="tab'+(activeView==='_add'?' active':'')+'" data-view="_add">+ Add Match</button>';
+  html += '<button class="tab'+(activeView==='_events'?' active':'')+'" data-view="_events">Local Events</button>';
   html += '<button class="tab settings-tab'+(activeView==='_settings'?' active':'')+'" data-view="_settings">Settings</button>';
   c.innerHTML = html;
   c.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -155,6 +156,7 @@ function renderTabs() {
 function showView(view) {
   const v = document.getElementById('view');
   if (view === '_add') { renderAddView(v); return; }
+  if (view === '_events') { renderEventsView(v); return; }
   if (view === '_settings') { renderSettingsView(v); return; }
   const match = WATCHES.find(w => w.slug === view);
   if (match) renderMatchView(v, match);
@@ -229,9 +231,33 @@ function renderMatchView(container, match) {
     fifaHtml + linksHtml +
     '<div class="cards">'+cardsHtml+'</div>'+
     '<div class="chart-box"><canvas id="priceChart"></canvas></div>'+
-    '<div style="margin-top:10px"><button class="btn btn-danger btn-sm" id="removeBtn">Remove this match</button></div>';
+    '<div class="panel" style="margin-top:12px">'+
+      '<div class="form-row">'+
+        '<div class="form-group"><label>Max Price ($)</label>'+
+          '<input type="number" id="editPrice" value="'+match.maxPrice+'" min="1"></div>'+
+        '<div class="form-group"><label>Tickets Wanted</label>'+
+          '<input type="number" id="editQty" value="'+match.ticketsWanted+'" min="1" max="10"></div>'+
+        '<div class="form-group"><label>Alerts</label>'+
+          '<select id="editAlerts">'+
+            '<option value="true"'+(match.alertsEnabled?' selected':'')+'>On</option>'+
+            '<option value="false"'+(!match.alertsEnabled?' selected':'')+'>Off</option>'+
+          '</select></div>'+
+        '<div><button class="btn btn-primary btn-sm" id="saveMatchBtn">Save</button></div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="margin-top:8px"><button class="btn btn-danger btn-sm" id="removeBtn">Remove this match</button></div>';
 
   renderChart(match);
+
+  document.getElementById('saveMatchBtn').addEventListener('click', async () => {
+    const updated = Object.assign({}, match);
+    delete updated.sources;
+    updated.maxPrice = parseInt(document.getElementById('editPrice').value) || 400;
+    updated.ticketsWanted = parseInt(document.getElementById('editQty').value) || 2;
+    updated.alertsEnabled = document.getElementById('editAlerts').value === 'true';
+    await fetch('/api/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updated)});
+    location.reload();
+  });
 
   document.getElementById('removeBtn').addEventListener('click', async () => {
     if (!confirm('Remove '+match.name+' from tracking?')) return;
@@ -284,8 +310,10 @@ function renderAddView(container) {
     '<h2>Add a Match to Track</h2>'+
     '<div class="panel">'+
       '<div class="form-row">'+
-        '<div class="form-group" style="flex:3"><label>Search Ticketmaster</label>'+
-          '<input type="text" id="searchInput" placeholder="e.g. FIFA World Cup Seattle" value="FIFA World Cup 2026"></div>'+
+        '<div class="form-group" style="flex:3"><label>Search</label>'+
+          '<input type="text" id="searchInput" placeholder="e.g. World Cup Match, Egypt vs Iran" value="World Cup Match"></div>'+
+        '<div class="form-group" style="flex:1"><label>City (optional)</label>'+
+          '<input type="text" id="searchCity" placeholder="e.g. Seattle, Houston"></div>'+
         '<div><button class="btn btn-primary" id="searchBtn">Search</button></div>'+
       '</div>'+
       '<div id="searchResults"></div>'+
@@ -318,11 +346,14 @@ function renderAddView(container) {
 
 async function doSearch() {
   const q = document.getElementById('searchInput').value.trim();
+  const city = document.getElementById('searchCity').value.trim();
   const box = document.getElementById('searchResults');
   if (!q) return;
   box.innerHTML = '<div class="empty">Searching...</div>';
   try {
-    const res = await fetch('/api/search?q='+encodeURIComponent(q));
+    let searchUrl = '/api/search?q='+encodeURIComponent(q);
+    if (city) searchUrl += '&city='+encodeURIComponent(city);
+    const res = await fetch(searchUrl);
     const data = await res.json();
     if (!data.results || data.results.length === 0) {
       box.innerHTML = '<div class="empty">No results found. Try a different search or add manually below.</div>';
@@ -334,7 +365,7 @@ async function doSearch() {
       return '<div class="search-item"><div class="si-info"><div class="si-name">'+r.name+'</div>'+
         '<div class="si-detail">'+r.venue+(d?' &middot; '+d:'')+'</div></div>'+
         (price?'<div class="si-price">'+price+'</div>':'')+
-        '<button class="btn btn-success btn-sm" data-event=\''+JSON.stringify(r).replace(/'/g,"&#39;")+'\'>Track</button></div>';
+        '<button class="btn btn-success btn-sm" data-event="'+JSON.stringify(r).replace(/"/g,"&quot;")+'">Track</button></div>';
     }).join('')+'</div>';
     box.querySelectorAll('button[data-event]').forEach(btn => {
       btn.addEventListener('click', () => trackFromSearch(JSON.parse(btn.dataset.event)));
@@ -387,18 +418,172 @@ async function doManualAdd() {
   location.reload();
 }
 
+// =============== LOCAL EVENTS VIEW ===============
+const HOST_CITIES = {
+  Seattle: {
+    site: 'https://www.seattlefwc26.org/events/event-calendar',
+    events: [
+      {name:'World Soccer Fan Celebration',venue:'Seattle Center, 305 Harrison St',dates:'Jun 11 – Jul 19',desc:'Large screens, DJ sets, and campus-wide activations. Free for all six Seattle home matches.',tags:['Watch Party','Free','Family-Friendly'],url:'https://www.seattlefwc26.org/events/seattle-fan-celebrations'},
+      {name:'Seattle Soccer House',venue:'Pacific Place, 600 Pine St',dates:'Jun 15 – Jul 2',desc:'4-story interior LED screen, interactive activations, and daily programming. Free access.',tags:['Watch Party','Free','Indoor'],url:'https://www.seattlefwc26.org/events/seattle-fan-celebrations'},
+      {name:'Soccer Celebration at the Waterfront',venue:'Waterfront Park, Pier 62',dates:'Match days',desc:'Hosted by Sounders FC, Reign FC & RAVE Foundation. Floating mini pitch, watch parties, music, food.',tags:['Watch Party','Free','Outdoor'],url:'https://www.seattlefwc26.org/events/seattle-fan-celebrations'},
+      {name:'Match Day Live',venue:'Victory Hall, 1201 1st Ave S (SODO)',dates:'Match days',desc:'Hosted by Seattle Mariners. Watch matches on a 23-foot screen.',tags:['Watch Party','Free'],url:'https://www.seattlefwc26.org/events/seattle-fan-celebrations'},
+      {name:'Global DJ Program',venue:'Seattle Center',dates:'Jun 11 – Jul 6',desc:'Local talent and global sounds activating public spaces.',tags:['Free','Outdoor','Music'],url:'https://www.seattlefwc26.org/events/event-calendar'},
+      {name:'Global Marketplace',venue:'Seattle Center',dates:'Jun 14 – Jul 10',desc:'Support local businesses and community entrepreneurs.',tags:['Free','Family-Friendly'],url:'https://www.seattlefwc26.org/events/event-calendar'},
+      {name:'The Beautiful Game Exhibition',venue:'MOHAI, 860 Terry Ave N',dates:'May 23 – Sep 7',desc:'Museum exhibit exploring how soccer unites people globally.',tags:['Paid','Indoor','Family-Friendly'],url:'https://www.seattlefwc26.org/events/event-calendar'},
+      {name:'Sculpture Walk',venue:'Seattle Center',dates:'Jun 1 – Nov 1',desc:'Temporary art and cultural installations celebrating the tournament.',tags:['Free','Outdoor','Art'],url:'https://www.seattlefwc26.org/events/event-calendar'},
+      {name:'Summer Fitness & Activities',venue:'Seattle Center',dates:'Jun 17 – Aug 26',desc:'Movement and fitness programming during the tournament.',tags:['Free','Outdoor','Family-Friendly'],url:'https://www.seattlefwc26.org/events/event-calendar'},
+    ],
+  },
+  'Los Angeles': {site:'https://losangelesfwc26.com/',eventsUrl:'https://losangelesfwc26.com/',events:[
+    {name:'FIFA Fan Festival LA',venue:'LA Coliseum area',dates:'Tournament duration',desc:'Official FIFA Fan Festival with live screenings, music, and entertainment.',tags:['Fan Festival','Free'],url:'https://losangelesfwc26.com/'},
+  ]},
+  'New York / NJ': {site:'https://nynjfwc26.com/',eventsUrl:'https://nynjfwc26.com/',events:[
+    {name:'Jersey Fan Hub',venue:'Jersey City, NJ',dates:'Tournament duration',desc:'Official NYNJ World Cup fan hub.',tags:['Fan Zone','Free'],url:'https://nynjfwc26.com/'},
+    {name:'Queens Group Stage HQ',venue:'Queens, NY',dates:'Group stage',desc:'Group stage fan headquarters in Queens.',tags:['Fan Zone','Free'],url:'https://nynjfwc26.com/'},
+    {name:'Fan Village Rockefeller Center',venue:'Rockefeller Center, Manhattan',dates:'Tournament duration',desc:'Fan village at the iconic Rockefeller Center.',tags:['Fan Zone','Free'],url:'https://nynjfwc26.com/'},
+    {name:'Staten Island Fan Zone',venue:'Staten Island, NY',dates:'Tournament duration',desc:'Fan zone on Staten Island.',tags:['Fan Zone','Free'],url:'https://nynjfwc26.com/'},
+    {name:'Bronx Fan Zone',venue:'Bronx, NY',dates:'Tournament duration',desc:'Fan zone in the Bronx.',tags:['Fan Zone','Free'],url:'https://nynjfwc26.com/'},
+    {name:'Brooklyn Fan Zone',venue:'Brooklyn, NY',dates:'Tournament duration',desc:'Fan zone in Brooklyn.',tags:['Fan Zone','Free'],url:'https://nynjfwc26.com/'},
+  ]},
+  Boston: {site:'https://bostonfwc26.com/',eventsUrl:'https://bostonfwc26.com/',events:[
+    {name:'FIFA Fan Festival',venue:'Boston City Hall Plaza',dates:'16 days during tournament',desc:'Vibrant fan hub with celebration activities. Free and open to the public.',tags:['Fan Festival','Free'],url:'https://bostonfwc26.com/'},
+    {name:'FIFA Stadium Express Bus',venue:'From Providence & regional locations',dates:'Match days',desc:'Direct bus service to Boston Stadium for matchday attendance.',tags:['Transport','Paid'],url:'https://bostonfwc26.com/'},
+  ]},
+  Dallas: {site:'https://www.dallasfwc26.com/',eventsUrl:'https://www.dallasfwc26.com/fifafanfestival-dallas/',events:[
+    {name:'FIFA Fan Festival Dallas',venue:'Fair Park, Dallas',dates:'34 days, free admission',desc:'35,000 capacity. Live match broadcasts, two stages, food from local and international vendors, interactive experiences. Free general admission.',tags:['Fan Festival','Free','Family-Friendly'],url:'https://www.dallasfwc26.com/fifafanfestival-dallas/'},
+    {name:'Latin Legacy Tour Concert',venue:'Fair Park (Fan Festival), Dallas',dates:'Jun 28',desc:'Baby Bash, Lil Rob, MC Magic, Concrete. Tickets from $26.',tags:['Concert','Paid','Music'],url:'https://www.dallasfwc26.com/fifafanfestival-dallas/'},
+    {name:'Turnpike Troubadours Concert',venue:'Fair Park (Fan Festival), Dallas',dates:'Jul 4',desc:'Country/roots July 4th celebration. Tickets from $26.',tags:['Concert','Paid','Music'],url:'https://www.dallasfwc26.com/fifafanfestival-dallas/'},
+    {name:'Major Lazer Concert',venue:'Fair Park (Fan Festival), Dallas',dates:'Jul 9',desc:'Diplo, Walshy Fire, Ape Drums. Electronic/dancehall. Tickets from $26.',tags:['Concert','Paid','Music'],url:'https://www.dallasfwc26.com/fifafanfestival-dallas/'},
+    {name:'Croatian-American Friendship Parade',venue:'Choctaw Stadium & Ferris Plaza, Dallas',dates:'Jun 16, 7:15 PM CT',desc:'Parade with equestrian drill team, flags, traditional Croatian attire. Live music, food, drinks.',tags:['Cultural','Free','Family-Friendly'],url:'https://www.dallasfwc26.com/our-venues/match-schedule/'},
+    {name:'Argentina Banderazo',venue:'Klyde Warren Park, Dallas',dates:'Jun 21, 5:00 PM & Jun 26, 6:00 PM CT',desc:'Traditional Argentine celebration with flags, songs, live drumming, and dancing.',tags:['Cultural','Free','Outdoor'],url:'https://www.dallasfwc26.com/our-venues/match-schedule/'},
+  ]},
+  Atlanta: {site:'https://atlantafwc26.com/',eventsUrl:'https://atlantafwc26.com/',events:[]},
+  'SF Bay Area': {site:'https://bayareafwc26.com/',eventsUrl:'https://bayareafwc26.com/',events:[]},
+  Houston: {site:'https://www.fwc26houston.com/',eventsUrl:'https://www.fwc26houston.com/fanfestival',events:[
+    {name:'FIFA Fan Festival Houston',venue:'East Downtown Houston',dates:'Jun 11 – Jul 19 (every match day)',desc:'Free to public, no ticket needed. Live match viewing on giant screens, performances, and activities. Opens 90 min before first match daily.',tags:['Fan Festival','Free','Outdoor'],url:'https://www.fwc26houston.com/fanfestival'},
+    {name:'Aramco Arena',venue:'East Downtown Houston (at Fan Festival)',dates:'Jun 11 – Jul 19',desc:'7v7 soccer field with 45-foot video display for match viewing, soccer simulator, and misting stations.',tags:['Free','Interactive','Outdoor'],url:'https://www.fwc26houston.com/fanfestival'},
+    {name:'Esphera Projection Dome',venue:'East Downtown Houston (at Fan Festival)',dates:'Jun 11 – Jul 19',desc:'360-degree immersive experience from Space Center Houston.',tags:['Free','Indoor','Interactive'],url:'https://www.fwc26houston.com/fanfestival'},
+    {name:'Houston Hall',venue:'East Downtown Houston (at Fan Festival)',dates:'Jun 11 – Jul 19',desc:'Climate-controlled venue with interactive attractions and food/beverage.',tags:['Free','Indoor','Family-Friendly'],url:'https://www.fwc26houston.com/fanfestival'},
+    {name:'Road to the Cup Youth Tournament',venue:'Aramco Arena, East Downtown',dates:'During tournament',desc:'U11-U18/19 boys and girls 7v7 youth tournament.',tags:['Free','Youth','Outdoor'],url:'https://www.fwc26houston.com/fanfestival'},
+  ]},
+  'Kansas City': {site:'https://www.kansascityfwc26.com/',eventsUrl:'https://www.kansascityfwc26.com/',events:[
+    {name:'FIFA Fan Festival Kansas City',venue:'Kansas City',dates:'Jun – Jul 2026',desc:'Thousands of fans cheering for their nations. Global headliners, local performers, live match screenings, and entertainment in the Heart of America.',tags:['Fan Festival','Free'],url:'https://www.kansascityfwc26.com/'},
+    {name:'ConnectKC26 Motorcoach Service',venue:'Airport & stadium routes',dates:'Match days',desc:'Bus service connecting airport and stadium for matchday travel.',tags:['Transport','Paid'],url:'https://www.kansascityfwc26.com/'},
+  ]},
+  Miami: {site:'https://miamifwc26.com/',eventsUrl:'https://miamifwc26.com/fan-festival/',events:[
+    {name:'FIFA Fan Festival Miami',venue:'Bayfront Park, Downtown Miami',dates:'Jun 13 – Jul 5',desc:'Free admission. Live match broadcasts, entertainment stages with DJs and concerts, cultural performances, interactive soccer experiences, diverse food vendors. Opens 60 min before first match.',tags:['Fan Festival','Free','Family-Friendly'],url:'https://miamifwc26.com/fan-festival/'},
+  ]},
+  Philadelphia: {site:'https://www.phillyfwc26.com/',eventsUrl:'https://www.phillyfwc26.com/',events:[]},
+  Vancouver: {site:'https://vancouverfwc26.ca/',eventsUrl:'https://vancouverfwc26.ca/fifa-fan-festival',events:[
+    {name:'FIFA Fan Festival Vancouver',venue:'PNE Grounds at Hastings Park',dates:'Jun 11 – Jul 19',desc:'Free general admission. New 10,000-capacity Amphitheatre, live match broadcasts, music from Canadian and global artists, food vendors, family activities, interactive zones.',tags:['Fan Festival','Free','Music','Family-Friendly'],url:'https://vancouverfwc26.ca/fifa-fan-festival'},
+  ]},
+  Toronto: {site:'https://torontofwc26.ca/',eventsUrl:'https://torontofwc26.ca/',events:[
+    {name:'FIFA Fan Festival Toronto',venue:'Fort York, Toronto',dates:'Jun 11 – Jul 19',desc:'Open-air fan experience with cultural attractions, entertainment, and live match screenings. Features Tkaronto Market — Indigenous entrepreneur marketplace.',tags:['Fan Festival','Free','Cultural'],url:'https://torontofwc26.ca/'},
+  ]},
+  'Mexico City': {site:'https://www.mexicocityfwc26.com.mx/',eventsUrl:'https://www.mexicocityfwc26.com.mx/',events:[
+    {name:'FIFA Fan Festival Mexico City',venue:'Zocalo, Mexico City',dates:'Tournament duration',desc:'Official fan festival at the iconic Zocalo plaza.',tags:['Fan Festival','Free'],url:'https://www.mexicocityfwc26.com.mx/'},
+  ]},
+  Guadalajara: {site:'https://guadalajarafwc26.com/',eventsUrl:'https://guadalajarafwc26.com/',events:[
+    {name:'FIFA Fan Festival Guadalajara',venue:'Plaza Liberacion, Guadalajara',dates:'39 days during tournament',desc:'Cultural, tourism, and fan experiences. Guadalajara becomes a meeting point for fans worldwide.',tags:['Fan Festival','Free'],url:'https://guadalajarafwc26.com/'},
+  ]},
+  Monterrey: {site:'https://www.fwc26monterrey.com/',eventsUrl:'https://www.fwc26monterrey.com/',events:[
+    {name:'FIFA Fan Festival Monterrey',venue:'Parque Fundidora, Monterrey',dates:'Tournament duration',desc:'Official fan festival at the historic Parque Fundidora.',tags:['Fan Festival','Free'],url:'https://www.fwc26monterrey.com/'},
+  ]},
+};
+
+function renderEventsView(container) {
+  const cityNames = Object.keys(HOST_CITIES);
+  const cityOptions = cityNames.map(c =>
+    '<option value="'+c+'"'+(c==='Seattle'?' selected':'')+'>'+c+'</option>'
+  ).join('');
+
+  container.innerHTML =
+    '<h2>Local Events &amp; Fan Celebrations</h2>'+
+    '<div class="panel">'+
+      '<div class="form-row">'+
+        '<div class="form-group"><label>Host City</label>'+
+          '<select id="evCity">'+cityOptions+'</select></div>'+
+      '</div>'+
+    '</div>'+
+    '<div id="evContent"></div>';
+
+  document.getElementById('evCity').addEventListener('change', function() {
+    renderCityEvents(this.value);
+  });
+  renderCityEvents('Seattle');
+}
+
+function renderCityEvents(cityName) {
+  const box = document.getElementById('evContent');
+  const city = HOST_CITIES[cityName];
+  if (!city) { box.innerHTML = ''; return; }
+
+  let html = '';
+
+  const evUrl = city.eventsUrl || city.site;
+  if (city.events.length > 0) {
+    html += '<div class="card-sub" style="margin-bottom:10px">Source: <a href="'+city.site+'" target="_blank">'+cityName+' FWC26 Official Site</a></div>';
+    html += '<div class="search-results" style="max-height:none">';
+    city.events.forEach(ev => {
+      html += '<div class="search-item" style="flex-direction:column;align-items:stretch">'+
+        '<div style="display:flex;justify-content:space-between;align-items:start">'+
+          '<div class="si-info"><div class="si-name">'+ev.name+'</div>'+
+            '<div class="si-detail">'+ev.venue+' &middot; '+ev.dates+'</div>'+
+          '</div>'+
+          '<a href="'+ev.url+'" target="_blank" class="btn btn-primary btn-sm" style="flex-shrink:0">Details</a>'+
+        '</div>'+
+        '<div class="card-sub" style="margin-top:6px">'+ev.desc+'</div>'+
+        '<div style="margin-top:4px">'+ev.tags.map(t =>
+          '<span class="badge '+(t==='Free'?'badge-on':'badge-off')+'" style="margin-right:4px">'+t+'</span>'
+        ).join('')+'</div>'+
+      '</div>';
+    });
+    html += '</div>';
+    html += '<div class="panel" style="margin-top:12px;text-align:center">'+
+      '<div class="card-sub">This list may not be complete.</div>'+
+      '<a href="'+evUrl+'" target="_blank" class="link-btn" style="margin-top:6px;display:inline-block">See more at '+cityName+' FWC26 Official Site &rarr;</a>'+
+    '</div>';
+  } else {
+    html += '<div class="panel" style="text-align:center;padding:30px">'+
+      '<div style="font-size:.9rem;color:#a1a1aa;margin-bottom:12px">Detailed event data for '+cityName+' coming soon</div>'+
+      '<div class="links" style="justify-content:center">'+
+        '<a href="'+evUrl+'" target="_blank" class="btn btn-primary">Events &amp; Fan Calendar</a>'+
+        '<a href="'+city.site+'" target="_blank" class="btn btn-sm" style="background:#27272a;color:#e4e4e7">Official FWC26 Site</a>'+
+      '</div>'+
+      '<div class="card-sub" style="margin-top:10px">Check for fan festivals, watch parties, drone shows, and cultural activations.</div>'+
+    '</div>';
+  }
+
+  box.innerHTML = html;
+}
+
 // =============== SETTINGS VIEW ===============
 function renderSettingsView(container) {
+  const curMethod = SETTINGS.alertMethod || 'ntfy';
   container.innerHTML =
     '<h2>Notification Settings</h2>'+
     '<div class="panel">'+
-      '<div class="form-group" style="margin-bottom:10px"><label>ntfy Topic</label>'+
-        '<input type="text" id="sNtfy" value="'+(SETTINGS.ntfyTopic||'')+'" placeholder="fifa-egypt-iran-tickets">'+
-        '<div class="card-sub" style="margin-top:4px">Install <a href="https://ntfy.sh" target="_blank">ntfy app</a> on your phone(s) and subscribe to this topic to get push notifications.</div>'+
+      '<div class="form-group" style="margin-bottom:12px"><label>Alert Method</label>'+
+        '<select id="sMethod">'+
+          '<option value="ntfy"'+(curMethod==='ntfy'?' selected':'')+'>ntfy (push notifications)</option>'+
+          '<option value="sms"'+(curMethod==='sms'?' selected':'')+'>SMS (text messages)</option>'+
+          '<option value="both"'+(curMethod==='both'?' selected':'')+'>Both ntfy + SMS</option>'+
+        '</select>'+
       '</div>'+
-      '<div class="form-group" style="margin-bottom:10px"><label>SMS Gateway Email (optional)</label>'+
-        '<input type="text" id="sSms" value="'+(SETTINGS.smsGatewayEmail||'')+'" placeholder="2065551234@tmomail.net">'+
-        '<div class="card-sub" style="margin-top:4px">Carrier email-to-SMS gateway for backup alerts on a second device.</div>'+
+      '<div id="ntfySettings"'+(curMethod==='sms'?' class="hidden"':'')+'>'+
+        '<div class="form-group" style="margin-bottom:10px"><label>ntfy Topic</label>'+
+          '<input type="text" id="sNtfy" value="'+(SETTINGS.ntfyTopic||'')+'" placeholder="fifa-egypt-iran-tickets">'+
+          '<div class="card-sub" style="margin-top:4px">Install <a href="https://ntfy.sh" target="_blank">ntfy app</a> on your phone(s) and subscribe to this topic to get push notifications.</div>'+
+        '</div>'+
+      '</div>'+
+      '<div id="smsSettings"'+(curMethod==='ntfy'?' class="hidden"':'')+'>'+
+        '<div class="form-group" style="margin-bottom:10px"><label>Phone Number for SMS</label>'+
+          '<input type="text" id="sSms" value="'+(SETTINGS.smsGatewayEmail||'')+'" placeholder="2065551234@tmomail.net">'+
+          '<div class="card-sub" style="margin-top:4px">Your 10-digit number + carrier gateway. Examples:<br>'+
+            'T-Mobile: 2065551234@tmomail.net<br>'+
+            'AT&amp;T: 2065551234@txt.att.net<br>'+
+            'Verizon: 2065551234@vtext.com</div>'+
+        '</div>'+
       '</div>'+
       '<button class="btn btn-primary" id="saveSettings">Save Settings</button>'+
     '</div>'+
@@ -430,11 +615,25 @@ function renderSettingsView(container) {
     });
   }
 
+  document.getElementById('sMethod').addEventListener('change', function() {
+    const v = this.value;
+    document.getElementById('ntfySettings').classList.toggle('hidden', v === 'sms');
+    document.getElementById('smsSettings').classList.toggle('hidden', v === 'ntfy');
+  });
+
   document.getElementById('saveSettings').addEventListener('click', async () => {
+    const method = document.getElementById('sMethod').value;
     const s = {
+      alertMethod: method,
       ntfyTopic: document.getElementById('sNtfy').value.trim(),
       smsGatewayEmail: document.getElementById('sSms').value.trim() || undefined,
     };
+    if ((method === 'ntfy' || method === 'both') && !s.ntfyTopic) {
+      alert('Please enter an ntfy topic'); return;
+    }
+    if ((method === 'sms' || method === 'both') && !s.smsGatewayEmail) {
+      alert('Please enter your SMS gateway email'); return;
+    }
     await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(s)});
     alert('Settings saved!');
   });

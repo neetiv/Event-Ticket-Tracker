@@ -51,8 +51,12 @@ export async function removeWatch(
 
 export async function getSettings(env: Env): Promise<UserSettings> {
   const val = await env.PRICE_DATA.get("settings");
-  if (val) return JSON.parse(val);
-  return { ntfyTopic: env.NTFY_TOPIC || "fifa-ticket-tracker" };
+  if (val) {
+    const parsed = JSON.parse(val);
+    if (!parsed.alertMethod) parsed.alertMethod = "ntfy";
+    return parsed;
+  }
+  return { alertMethod: "ntfy", ntfyTopic: env.NTFY_TOPIC || "fifa-ticket-tracker" };
 }
 
 export async function saveSettings(
