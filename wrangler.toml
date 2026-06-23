@@ -1,0 +1,19 @@
+name = "fifa-ticket-tracker"
+main = "src/worker.ts"
+compatibility_date = "2025-06-19"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[kv_namespaces]]
+binding = "PRICE_DATA"
+id = "3f9b70de34404f729d8bc8cb213734a5"
+
+[vars]
+NTFY_TOPIC = "fifa-egypt-iran-tickets"
+DRY_RUN = "false"
+
+# Set these as secrets via `wrangler secret put`:
+#   TICKETMASTER_API_KEY  - from developer.ticketmaster.com
+#   NTFY_TOKEN            - (optional) if using a protected ntfy topic
+#   SMS_GATEWAY_EMAIL     - (optional) e.g. 2065551234@tmomail.net
