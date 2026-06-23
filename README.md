@@ -1,5 +1,7 @@
 # FIFA Ticket Tracker
 
+**Live dashboard:** https://fifa-ticket-tracker.neeti-tickets.workers.dev
+
 Cloudflare Worker that monitors World Cup ticket prices on Ticketmaster and SeatGeek, stores price history, sends push notifications when prices drop below your target, and serves a live dashboard with trend charts.
 
 ## Setup
