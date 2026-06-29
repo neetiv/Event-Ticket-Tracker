@@ -1,7 +1,6 @@
 import { chromium } from "playwright";
 
 const WORKER_URL = process.env.WORKER_URL;
-const WORKER_SECRET = process.env.WORKER_SECRET;
 
 if (!WORKER_URL) {
   console.error("WORKER_URL env var required");
@@ -9,6 +8,7 @@ if (!WORKER_URL) {
 }
 
 async function main() {
+  console.log("Fetching watches from", WORKER_URL);
   const watchesRes = await fetch(`${WORKER_URL}/api/watches`);
   const { watches } = await watchesRes.json();
 
@@ -16,6 +16,8 @@ async function main() {
     console.log("No watches configured — nothing to scrape");
     return;
   }
+
+  console.log(`Found ${watches.length} watched event(s)`);
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
@@ -28,45 +30,32 @@ async function main() {
 
   for (const watch of watches) {
     const now = new Date();
-    if (new Date(watch.date) < now) continue;
-
-    // Scrape Ticketmaster
-    if (watch.ticketmasterEventId) {
-      const url = `https://www.ticketmaster.com/event/${watch.ticketmasterEventId}`;
-      const price = await scrapePage(context, url, watch.slug, "ticketmaster");
-      if (price) results.push(price);
+    if (new Date(watch.date) < now) {
+      console.log(`Skipping ${watch.slug} — event already passed`);
+      continue;
     }
 
-    // Scrape SeatGeek — build URL from event data
-    const sgLink = watch.links?.find((l) => l.label === "SeatGeek");
-    const sgUrl =
-      sgLink?.url ||
-      (watch.seatgeekEventSlug
-        ? `https://seatgeek.com/${watch.seatgeekEventSlug}`
-        : null);
-    if (sgUrl) {
-      const price = await scrapePage(context, sgUrl, watch.slug, "seatgeek");
-      if (price) results.push(price);
+    // Scrape Ticketmaster event page
+    const url = watch.url || (watch.ticketmasterEventId
+      ? `https://www.ticketmaster.com/event/${watch.ticketmasterEventId}`
+      : null);
+
+    if (!url) {
+      console.log(`No URL for ${watch.slug}, skipping`);
+      continue;
     }
 
-    // Also try SeatGeek search if no direct URL
-    if (!sgUrl && watch.name) {
-      const searchUrl = `https://seatgeek.com/search?search=${encodeURIComponent(watch.name)}`;
-      console.log(`No SeatGeek URL for ${watch.slug}, trying search: ${searchUrl}`);
-    }
+    const price = await scrapePage(context, url, watch.slug);
+    if (price) results.push(price);
   }
 
   await browser.close();
 
-  // Post results to worker
   if (results.length > 0) {
     console.log(`\nPosting ${results.length} price(s) to worker...`);
     const res = await fetch(`${WORKER_URL}/api/ingest`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(WORKER_SECRET ? { Authorization: `Bearer ${WORKER_SECRET}` } : {}),
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prices: results }),
     });
     const body = await res.json();
@@ -76,111 +65,90 @@ async function main() {
   }
 }
 
-async function scrapePage(context, url, matchSlug, source) {
-  console.log(`\nScraping ${source} for ${matchSlug}: ${url}`);
+async function scrapePage(context, url, slug) {
+  console.log(`\nScraping ${slug}: ${url}`);
   const page = await context.newPage();
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
-    // Wait for price elements to render
     await page.waitForTimeout(5000);
+
+    const priceData = await page.evaluate(() => {
+      // Strategy 1: Look for specific Ticketmaster price elements
+      const selectors = [
+        '[data-testid="price-range"]',
+        '[class*="PriceRange"]',
+        '[class*="price-range"]',
+        '[class*="EventPrice"]',
+        '[class*="resale-price"]',
+        '[class*="starting-at"]',
+        '[data-testid="resale-price"]',
+        '[class*="UpsellCard"]',
+        '[class*="ticket-price"]',
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el?.textContent?.includes("$")) return el.textContent.trim();
+      }
+
+      // Strategy 2: Regex the full page text for price patterns
+      const text = document.body.innerText;
+      const patterns = [
+        /(?:starting at|starts at|from|get[- ]in|lowest)[:\s]*\$(\d[\d,]*(?:\.\d{2})?)/i,
+        /\$(\d[\d,]*(?:\.\d{2})?)\s*[-–]\s*\$(\d[\d,]*(?:\.\d{2})?)/,
+      ];
+      for (const pat of patterns) {
+        const m = text.match(pat);
+        if (m) return m[0];
+      }
+
+      // Strategy 3: Find elements that look like prices
+      const els = document.querySelectorAll("span, div, p, button, a");
+      for (const el of els) {
+        const t = el.textContent?.trim() || "";
+        if (/^\$\d{2,4}(\.\d{2})?\s*([-–]\s*\$\d{2,4}(\.\d{2})?)?$/.test(t)) {
+          return t;
+        }
+      }
+
+      return null;
+    });
 
     let minPrice = null;
     let maxPrice = null;
-    let pageUrl = url;
 
-    if (source === "ticketmaster") {
-      // Ticketmaster shows prices in various elements
-      // Look for "Starting at" or price displays
-      const priceText = await page.evaluate(() => {
-        const selectors = [
-          '[data-testid="price-range"]',
-          '[class*="PriceRange"]',
-          '[class*="price-range"]',
-          '[class*="starting-at"]',
-          '[class*="EventPrice"]',
-          ".resale-price",
-          '[data-testid="resale-price"]',
-        ];
-        for (const sel of selectors) {
-          const el = document.querySelector(sel);
-          if (el?.textContent) return el.textContent.trim();
-        }
-        // Fallback: find any element with a dollar amount
-        const allText = document.body.innerText;
-        const priceMatch = allText.match(
-          /(?:starting at|from|get[- ]in[- ]price|lowest price)[:\s]*\$(\d[\d,]*)/i
-        );
-        if (priceMatch) return "$" + priceMatch[1];
-        // Last resort: find price-looking elements
-        const elements = document.querySelectorAll("span, div, p");
-        for (const el of elements) {
-          const text = el.textContent.trim();
-          if (/^\$\d{2,4}(\.\d{2})?$/.test(text)) return text;
-        }
-        return null;
-      });
-      if (priceText) {
-        const prices = extractPrices(priceText);
-        minPrice = prices.min;
-        maxPrice = prices.max;
+    if (priceData) {
+      const prices = [];
+      const matches = priceData.matchAll(/\$(\d[\d,]*(?:\.\d{2})?)/g);
+      for (const m of matches) {
+        prices.push(parseFloat(m[1].replace(",", "")));
       }
-      pageUrl = page.url();
+      if (prices.length > 0) {
+        minPrice = Math.min(...prices);
+        maxPrice = Math.max(...prices);
+      }
     }
 
-    if (source === "seatgeek") {
-      const priceText = await page.evaluate(() => {
-        const selectors = [
-          '[class*="ListingPrice"]',
-          '[class*="listing-price"]',
-          '[data-testid*="price"]',
-          '[class*="EventPrice"]',
-          '[class*="get-in-price"]',
-          '[class*="priceButton"]',
-        ];
-        for (const sel of selectors) {
-          const el = document.querySelector(sel);
-          if (el?.textContent) return el.textContent.trim();
-        }
-        const allText = document.body.innerText;
-        const priceMatch = allText.match(
-          /(?:from|starting at|get[- ]in)[:\s]*\$(\d[\d,]*)/i
-        );
-        if (priceMatch) return "$" + priceMatch[1];
-        // Look for price-like elements
-        const elements = document.querySelectorAll("span, div, button, a");
-        for (const el of elements) {
-          const text = el.textContent.trim();
-          if (/^\$\d{2,4}(\s*[-–]\s*\$\d{2,4})?$/.test(text)) return text;
-        }
-        return null;
-      });
-      if (priceText) {
-        const prices = extractPrices(priceText);
-        minPrice = prices.min;
-        maxPrice = prices.max;
-      }
-      pageUrl = page.url();
-    }
+    const pageUrl = page.url();
 
     if (minPrice !== null) {
-      console.log(`  Found: $${minPrice}${maxPrice ? " – $" + maxPrice : ""}`);
+      console.log(`  Found: $${minPrice}${maxPrice !== minPrice ? " – $" + maxPrice : ""}`);
     } else {
-      console.log("  No price found on page");
-      // Take a screenshot for debugging
+      console.log("  No price found");
       await page.screenshot({
-        path: `scraper/debug-${source}-${matchSlug}.png`,
+        path: `scraper/debug-${slug}.png`,
         fullPage: false,
       });
-      console.log(`  Debug screenshot saved`);
+      console.log("  Debug screenshot saved");
     }
 
     await page.close();
+
     return minPrice !== null
       ? {
           timestamp: Date.now(),
-          source,
-          matchSlug,
+          source: "ticketmaster",
+          matchSlug: slug,
           minPrice,
           maxPrice: maxPrice || minPrice,
           currency: "USD",
@@ -188,23 +156,13 @@ async function scrapePage(context, url, matchSlug, source) {
         }
       : null;
   } catch (err) {
-    console.error(`  Error scraping ${source}: ${err.message}`);
+    console.error(`  Error: ${err.message}`);
     await page.close();
     return null;
   }
 }
 
-function extractPrices(text) {
-  const prices = [];
-  const matches = text.matchAll(/\$(\d[\d,]*(?:\.\d{2})?)/g);
-  for (const m of matches) {
-    prices.push(parseFloat(m[1].replace(",", "")));
-  }
-  if (prices.length === 0) return { min: null, max: null };
-  return { min: Math.min(...prices), max: Math.max(...prices) };
-}
-
 main().catch((err) => {
-  console.error("Fatal error:", err);
+  console.error("Fatal:", err);
   process.exit(1);
 });
