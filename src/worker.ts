@@ -107,6 +107,20 @@ export default {
     if (path === "/api/status") return json({ ok: true, timestamp: new Date().toISOString() });
 
     if (path === "/api/check" && request.method === "POST") {
+      const slug = url.searchParams.get("slug");
+      if (slug) {
+        const watches = await getWatches(env);
+        const event = watches.find((w) => w.slug === slug);
+        if (event && event.ticketmasterEventId) {
+          const snapshot = await fetchEventPrice(event, env.TICKETMASTER_API_KEY);
+          if (snapshot.minPrice !== null) {
+            await savePrice(env, snapshot);
+            await checkAndAlert(env, event, snapshot);
+          }
+          return json({ ok: true, slug, price: snapshot.minPrice });
+        }
+        return json({ error: "Event not found" }, 404);
+      }
       await this.scheduled({} as ScheduledEvent, env, {} as ExecutionContext);
       return json({ ok: true });
     }

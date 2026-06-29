@@ -104,10 +104,19 @@ function buildHtml(watchData: any[], settings: any): string {
     .hidden{display:none}
     .modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:center;justify-content:center;padding:20px}
     .modal{background:#fff;border-radius:16px;padding:24px;max-width:500px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.15)}
-    .modal h3{font-family:'Playfair Display',serif;font-size:1.1rem;color:#5a3d7a;margin-bottom:8px}
+    .modal h3{font-family:'Playfair Display',serif;font-size:1.1rem;color:#5a3d7a;margin-bottom:8px;font-style:italic}
     .modal p{font-size:.85rem;color:#3a2d4f;line-height:1.5;margin-bottom:8px}
     .modal .close-btn{float:right;background:none;border:none;font-size:1.5rem;cursor:pointer;color:#8a7699;line-height:1}
     .si-name.clickable{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+    .accordion{border:1px solid #e6dced;border-radius:14px;margin-bottom:10px;overflow:hidden;background:rgba(255,255,255,.85);backdrop-filter:blur(8px)}
+    .accordion-header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer;transition:background .15s}
+    .accordion-header:hover{background:rgba(230,220,237,.3)}
+    .accordion-title{font-family:'Playfair Display',serif;font-weight:700;font-size:.95rem;color:#3a2d4f}
+    .accordion-meta{font-size:.75rem;color:#8a7699}
+    .accordion-arrow{font-size:1.2rem;color:#8a7699;transition:transform .2s}
+    .accordion-arrow.open{transform:rotate(180deg)}
+    .accordion-body{padding:0 16px 16px;display:none}
+    .accordion-body.open{display:block}
     .hero{text-align:center;padding:20px 0 10px}
     .hero h1{font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:900}
     .hero h1 .grad{background:linear-gradient(135deg,#7a4d9e,#c47a9e);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
@@ -141,9 +150,9 @@ function init() {
 function renderTabs() {
   const c = document.getElementById('tabs');
   let html = '<button class="tab'+(activeView==='_search'?' active':'')+'" data-view="_search">&#127804; Explore Events</button>';
-  WATCHES.forEach(w => {
-    html += '<button class="tab'+(w.slug===activeView?' active':'')+'" data-view="'+w.slug+'">'+w.name+'</button>';
-  });
+  if (WATCHES.length > 0) {
+    html += '<button class="tab'+(activeView==='_tracked'?' active':'')+'" data-view="_tracked">&#127804; Tracked ('+WATCHES.length+')</button>';
+  }
   html += '<button class="tab'+(activeView==='_alerts'?' active':'')+'" data-view="_alerts">&#127804; Alerts &amp; Settings</button>';
   c.innerHTML = html;
   c.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
@@ -156,10 +165,9 @@ function renderTabs() {
 function showView(view) {
   const v = document.getElementById('view');
   if (view === '_search') { renderSearchView(v); return; }
+  if (view === '_tracked') { renderTrackedView(v); return; }
   if (view === '_alerts') { renderSettingsView(v); return; }
-  const w = WATCHES.find(e => e.slug === view);
-  if (w) renderEventView(v, w);
-  else v.innerHTML = '<div class="empty">Event not found</div>';
+  v.innerHTML = '<div class="empty">Select a tab</div>';
 }
 
 // =============== SEARCH VIEW ===============
@@ -237,27 +245,202 @@ async function doSearch() {
   } catch(e) { box.innerHTML = '<div class="empty">Search failed.</div>'; }
 }
 
-async function trackEvent(event) {
+function trackEvent(event) {
   const slug = slugify(event.name + '-' + event.eventId);
-  const maxPrice = prompt('Alert when price drops below ($):', event.minPrice ? String(Math.round(event.minPrice * 0.9)) : '100');
-  if (maxPrice === null) return;
-  const watch = {
-    slug,
-    name: event.name,
-    date: event.date || new Date().toISOString(),
-    venue: event.venue || '',
-    city: event.city || '',
-    ticketmasterEventId: event.eventId,
-    ticketsWanted: 2,
-    maxPrice: parseInt(maxPrice) || 100,
-    alertsEnabled: true,
-    url: event.url || 'https://www.ticketmaster.com/event/'+event.eventId,
-  };
-  await fetch('/api/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(watch)});
-  location.reload();
+  const defaultPrice = event.minPrice ? String(Math.round(event.minPrice * 0.9)) : '100';
+  const d = event.date ? new Date(event.date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) : '';
+
+  showModal('&#127804; <span style="text-transform:uppercase;letter-spacing:.08em;font-size:.85em">Track:</span> '+event.name,
+    '<div style="margin-bottom:12px"><strong>'+(event.venue||'')+'</strong>'+(d?' &middot; '+d:'')+'</div>'+
+    '<div class="form-group" style="margin-bottom:12px"><label>&#127804; Alert when price drops below ($)</label>'+
+      '<input type="number" id="trackPrice" value="'+defaultPrice+'" min="1" style="font-size:1.1rem;text-align:center"></div>'+
+    '<div class="form-group" style="margin-bottom:12px"><label>&#127804; How many tickets?</label>'+
+      '<input type="number" id="trackQty" value="2" min="1" max="10" style="font-size:1.1rem;text-align:center"></div>'+
+    '<div style="display:flex;gap:8px;justify-content:center;margin-top:16px">'+
+      '<button class="btn btn-mint" id="trackConfirm" style="padding:10px 28px;font-size:.95rem">&#127804; Start Tracking</button>'+
+      '<button class="btn" id="trackCancel" style="padding:10px 20px;background:#e6dced;color:#5a3d7a">Cancel</button>'+
+    '</div>',
+    true
+  );
+
+  document.getElementById('trackCancel').addEventListener('click', () => {
+    document.querySelector('.modal-bg').remove();
+  });
+  document.getElementById('trackConfirm').addEventListener('click', async () => {
+    const watch = {
+      slug,
+      name: event.name,
+      date: event.date || new Date().toISOString(),
+      venue: event.venue || '',
+      city: (event.city||'')+(event.state?', '+event.state:''),
+      ticketmasterEventId: event.eventId,
+      ticketsWanted: parseInt(document.getElementById('trackQty').value) || 2,
+      maxPrice: parseInt(document.getElementById('trackPrice').value) || 100,
+      alertsEnabled: true,
+      url: event.url || 'https://www.ticketmaster.com/event/'+event.eventId,
+    };
+    await fetch('/api/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(watch)});
+    location.reload();
+  });
 }
 
-// =============== EVENT VIEW ===============
+// =============== TRACKED VIEW ===============
+function renderTrackedView(container) {
+  if (WATCHES.length === 0) {
+    container.innerHTML = '<div class="empty">No events tracked yet. Search and track events from the Explore tab.</div>';
+    return;
+  }
+
+  let html = '<h2>&#127800; Your Tracked Events</h2>';
+  WATCHES.forEach((event, idx) => {
+    const d = new Date(event.date);
+    const dateStr = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    const daysLeft = Math.max(0, Math.ceil((d - Date.now()) / 86400000));
+    const badge = event.alertsEnabled
+      ? '<span class="badge badge-on">Alert &le;$'+event.maxPrice+'</span>'
+      : '<span class="badge badge-off">Tracking only</span>';
+
+    let cardsHtml = '';
+    for (const [source, data] of Object.entries(event.sources || {})) {
+      const label = source.charAt(0).toUpperCase() + source.slice(1);
+      const latest = data.latest;
+      let cls='na', val='No data yet', sub='';
+      if (latest && latest.minPrice !== null) {
+        const p = latest.minPrice;
+        cls = p <= event.maxPrice * 0.85 ? 'green' : p <= event.maxPrice ? 'amber' : 'red';
+        val = '$'+p;
+        if (latest.maxPrice && latest.maxPrice !== latest.minPrice) sub = 'Range: $'+latest.minPrice+' – $'+latest.maxPrice;
+      }
+      const chk = data.lastCheck ? timeAgo(new Date(data.lastCheck)) : 'never';
+      const link = latest?.url ? ' &middot; <a href="'+latest.url+'" target="_blank">Buy tickets</a>' : '';
+      cardsHtml += '<div class="card"><div class="card-label">'+label+'</div><div class="card-value '+cls+'">'+val+'</div>'+
+        (sub?'<div class="card-sub">'+sub+'</div>':'')+
+        '<div class="card-sub">Checked '+chk+link+'</div></div>';
+    }
+
+    html += '<div class="accordion">'+
+      '<div class="accordion-header" data-acc="'+idx+'">'+
+        '<div><div class="accordion-title">&#127800; '+event.name+'</div>'+
+          '<div class="accordion-meta">'+event.venue+', '+event.city+' &middot; '+dateStr+' &middot; '+daysLeft+' days '+badge+'</div>'+
+        '</div>'+
+        '<span class="accordion-arrow" id="arrow-'+idx+'">&#9660;</span>'+
+      '</div>'+
+      '<div class="accordion-body" id="body-'+idx+'">'+
+        '<div style="margin-bottom:10px;display:flex;gap:6px;align-items:center">'+
+          (event.url?'<a href="'+event.url+'" target="_blank" class="btn btn-pink btn-sm">Buy Tickets</a>':'')+
+          '<button class="btn btn-primary btn-sm check-one" data-slug="'+event.slug+'">&#127804; Check Price Now</button>'+
+          '<span class="check-status-'+idx+'" style="font-size:.75rem;color:#8a7699"></span>'+
+        '</div>'+
+        '<div class="cards">'+cardsHtml+'</div>'+
+        '<div class="chart-box"><canvas id="chart-'+idx+'"></canvas></div>'+
+        '<div class="panel">'+
+          '<div class="form-row">'+
+            '<div class="form-group"><label>Max Price ($)</label><input type="number" class="edit-price" data-idx="'+idx+'" value="'+event.maxPrice+'" min="1"></div>'+
+            '<div class="form-group"><label>Tickets</label><input type="number" class="edit-qty" data-idx="'+idx+'" value="'+event.ticketsWanted+'" min="1" max="10"></div>'+
+            '<div class="form-group"><label>Alerts</label><select class="edit-alerts" data-idx="'+idx+'"><option value="true"'+(event.alertsEnabled?' selected':'')+'>On</option><option value="false"'+(!event.alertsEnabled?' selected':'')+'>Off</option></select></div>'+
+            '<div><button class="btn btn-primary btn-sm save-watch" data-idx="'+idx+'">Save</button></div>'+
+          '</div>'+
+        '</div>'+
+        '<button class="btn btn-danger btn-sm remove-watch" data-slug="'+event.slug+'">Remove from tracking</button>'+
+      '</div>'+
+    '</div>';
+  });
+
+  container.innerHTML = html;
+
+  // Accordion toggle
+  container.querySelectorAll('.accordion-header').forEach(hdr => {
+    hdr.addEventListener('click', () => {
+      const idx = hdr.dataset.acc;
+      const body = document.getElementById('body-'+idx);
+      const arrow = document.getElementById('arrow-'+idx);
+      const isOpen = body.classList.toggle('open');
+      arrow.classList.toggle('open', isOpen);
+      if (isOpen) renderAccordionChart(idx);
+    });
+  });
+
+  // Save
+  container.querySelectorAll('.save-watch').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const i = parseInt(btn.dataset.idx);
+      const updated = Object.assign({}, WATCHES[i]);
+      delete updated.sources;
+      updated.maxPrice = parseInt(container.querySelector('.edit-price[data-idx="'+i+'"]').value) || 100;
+      updated.ticketsWanted = parseInt(container.querySelector('.edit-qty[data-idx="'+i+'"]').value) || 2;
+      updated.alertsEnabled = container.querySelector('.edit-alerts[data-idx="'+i+'"]').value === 'true';
+      await fetch('/api/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updated)});
+      location.reload();
+    });
+  });
+
+  // Check single price
+  container.querySelectorAll('.check-one').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const slug = btn.dataset.slug;
+      const status = container.querySelector('.check-status-'+btn.closest('.accordion').querySelector('.accordion-header').dataset.acc);
+      btn.disabled = true;
+      btn.textContent = 'Checking...';
+      if (status) status.textContent = '';
+      try {
+        await fetch('/api/check?slug='+slug, {method:'POST'});
+        btn.textContent = '\\u{1F33C} Check Price Now';
+        if (status) status.textContent = 'Done! Refresh to see results.';
+      } catch(e) {
+        btn.textContent = '\\u{1F33C} Check Price Now';
+        if (status) status.textContent = 'Failed.';
+      }
+      btn.disabled = false;
+    });
+  });
+
+  // Remove
+  container.querySelectorAll('.remove-watch').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Stop tracking this event?')) return;
+      await fetch('/api/watches/'+btn.dataset.slug, {method:'DELETE'});
+      location.reload();
+    });
+  });
+}
+
+function renderAccordionChart(idx) {
+  const event = WATCHES[idx];
+  const canvas = document.getElementById('chart-'+idx);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const datasets = [];
+  const colors = {ticketmaster:'#9b72b0',seatgeek:'#6a9e6f'};
+  for (const [source, data] of Object.entries(event.sources || {})) {
+    if (!data.history || data.history.length === 0) continue;
+    datasets.push({
+      label: source.charAt(0).toUpperCase()+source.slice(1),
+      data: data.history.filter(h=>h.minPrice!==null).map(h=>({x:h.timestamp,y:h.minPrice})),
+      borderColor:colors[source]||'#9b72b0',backgroundColor:(colors[source]||'#9b72b0')+'20',
+      borderWidth:2,pointRadius:1.5,tension:0.3,fill:true,
+    });
+  }
+  if (event.alertsEnabled && datasets.length > 0) {
+    datasets.push({
+      label:'Target ($'+event.maxPrice+')',
+      data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
+      borderColor:'#f0c0cf',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,
+    });
+  }
+  new Chart(ctx,{
+    type:'line',data:{datasets},
+    options:{
+      responsive:true,interaction:{mode:'index',intersect:false},
+      scales:{
+        x:{type:'time',time:{tooltipFormat:'MMM d, h:mm a'},grid:{color:'#efe6f5'},ticks:{color:'#8a7699'}},
+        y:{beginAtZero:false,grid:{color:'#efe6f5'},ticks:{color:'#8a7699',callback:v=>'$'+v}},
+      },
+      plugins:{legend:{labels:{color:'#8a7699'}},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.y}}},
+    },
+  });
+}
+
+// =============== EVENT VIEW (unused, kept for direct links) ===============
 function renderEventView(container, event) {
   const d = new Date(event.date);
   const dateStr = d.toLocaleDateString('en-US',{weekday:'long',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
@@ -363,7 +546,14 @@ function renderSettingsView(container) {
         '<div class="form-group" style="margin-bottom:10px"><label>ntfy Topic</label><input type="text" id="sNtfy" value="'+(SETTINGS.ntfyTopic||'')+'" placeholder="my-ticket-alerts">'+
           '<div class="card-sub" style="margin-top:4px">Install <a href="https://ntfy.sh" target="_blank">ntfy app</a> and subscribe to this topic.</div></div></div>'+
       '<div id="smsSettings"'+(curMethod==='ntfy'?' class="hidden"':'')+'>'+
-        '<div class="form-group" style="margin-bottom:10px"><label>SMS Gateway Email</label><input type="text" id="sSms" value="'+(SETTINGS.smsGatewayEmail||'')+'" placeholder="2065551234@tmomail.net"></div></div>'+
+        '<div class="form-group" style="margin-bottom:10px"><label>SMS Gateway Email</label><input type="text" id="sSms" value="'+(SETTINGS.smsGatewayEmail||'')+'" placeholder="2065551234@tmomail.net">'+
+          '<div class="card-sub" style="margin-top:4px">Your 10-digit number + carrier domain. Find yours:<br>'+
+            '&#127804; <strong>T-Mobile:</strong> number@tmomail.net<br>'+
+            '&#127804; <strong>AT&amp;T:</strong> number@txt.att.net<br>'+
+            '&#127804; <strong>Verizon:</strong> number@vtext.com<br>'+
+            '&#127804; <strong>Sprint:</strong> number@messaging.sprintpcs.com<br>'+
+            '<a href="https://avtech.com/articles/138/list-of-carrier-gateway-addresses/" target="_blank">Full list of carrier gateways &rarr;</a></div>'+
+        '</div></div>'+
       '<button class="btn btn-primary" id="saveSettings">Save Settings</button>'+
     '</div>'+
     '<h2>&#127800; New Event Alerts</h2>'+
@@ -456,12 +646,13 @@ function renderSettingsView(container) {
 }
 
 // =============== UTILS ===============
-function showModal(title, text) {
+function showModal(title, content, isHtml) {
   const existing = document.querySelector('.modal-bg');
   if (existing) existing.remove();
   const modal = document.createElement('div');
   modal.className = 'modal-bg';
-  modal.innerHTML = '<div class="modal"><button class="close-btn">&times;</button><h3>'+title+'</h3><p>'+text.replace(/\\n/g,'<br>')+'</p></div>';
+  const body = isHtml ? content : '<p>'+content.replace(/\\n/g,'<br>')+'</p>';
+  modal.innerHTML = '<div class="modal"><button class="close-btn">&times;</button><h3>'+title+'</h3>'+body+'</div>';
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   modal.querySelector('.close-btn').addEventListener('click', () => modal.remove());
   document.body.appendChild(modal);
