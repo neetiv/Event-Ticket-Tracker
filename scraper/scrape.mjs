@@ -30,100 +30,132 @@ async function main() {
 
   for (const watch of watches) {
     if (new Date(watch.date) < new Date()) {
-      console.log(`Skipping ${watch.slug} — event already passed`);
+      console.log(`Skipping ${watch.slug} — already passed`);
       continue;
     }
 
-    // Search TicketData for this event
     const searchName = watch.name.replace(/[-–:]/g, " ").replace(/\s+/g, " ").trim();
     const searchUrl = `https://www.ticketdata.com/search?q=${encodeURIComponent(searchName)}`;
-    console.log(`\nSearching TicketData for: ${searchName}`);
-    console.log(`URL: ${searchUrl}`);
+    console.log(`\nSearching TicketData: ${searchName}`);
 
     const page = await context.newPage();
     try {
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForTimeout(4000);
 
-      // Find the event link in search results and click it
-      const eventLink = await page.evaluate((name) => {
-        const links = document.querySelectorAll("a");
-        const lower = name.toLowerCase();
-        for (const a of links) {
-          const text = (a.textContent || "").toLowerCase();
-          if (text.includes(lower.split(" ")[0]) && a.href.includes("/event/")) {
-            return a.href;
-          }
-        }
-        // Fallback: find any event link
-        for (const a of links) {
-          if (a.href.includes("/event/")) return a.href;
-        }
-        return null;
-      }, searchName);
+      // Find the first event link
+      const eventLink = await page.evaluate(() => {
+        const links = document.querySelectorAll('a[href*="/event/"]');
+        return links.length > 0 ? links[0].href : null;
+      });
 
-      if (eventLink) {
-        console.log(`  Found event page: ${eventLink}`);
-        await page.goto(eventLink, { waitUntil: "domcontentloaded", timeout: 30000 });
-        await page.waitForTimeout(4000);
+      if (!eventLink) {
+        console.log("  No event found in search results");
+        await page.screenshot({ path: `scraper/debug-${watch.slug}-search.png` });
+        await page.close();
+        continue;
+      }
 
-        const priceData = await page.evaluate(() => {
-          const text = document.body.innerText;
+      console.log(`  Event page: ${eventLink}`);
+      await page.goto(eventLink, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForTimeout(5000);
 
-          // Look for "Get-In Price" or "From $X" patterns
+      // Extract per-platform prices
+      const platformPrices = await page.evaluate(() => {
+        const prices = {};
+        const text = document.body.innerText;
+        const platforms = ["StubHub", "SeatGeek", "Vivid Seats", "Gametime", "TickPick", "MegaSeats"];
+
+        // Strategy 1: Look for platform names near dollar amounts
+        for (const platform of platforms) {
           const patterns = [
-            /get[- ]?in[- ]?price[:\s]*\$(\d[\d,]*(?:\.\d{2})?)/i,
-            /from\s*\$(\d[\d,]*(?:\.\d{2})?)/i,
-            /starting\s*(?:at|from)\s*\$(\d[\d,]*(?:\.\d{2})?)/i,
-            /lowest[:\s]*\$(\d[\d,]*(?:\.\d{2})?)/i,
+            new RegExp(platform + "[\\s\\S]{0,50}?\\$(\\d[\\d,]*(?:\\.\\d{2})?)", "i"),
+            new RegExp("\\$(\\d[\\d,]*(?:\\.\\d{2})?)\\s*(?:on|at|via)?\\s*" + platform, "i"),
           ];
           for (const pat of patterns) {
             const m = text.match(pat);
-            if (m) return { price: m[1], type: "text" };
+            if (m) {
+              prices[platform.toLowerCase().replace(/\s+/g, "-")] = parseFloat(m[1].replace(",", ""));
+              break;
+            }
           }
+        }
 
-          // Look for price elements
-          const selectors = [
-            '[class*="price"]',
-            '[class*="Price"]',
-            '[data-testid*="price"]',
-            'td',
-            'span',
-          ];
-          for (const sel of selectors) {
-            const els = document.querySelectorAll(sel);
-            for (const el of els) {
-              const t = el.textContent?.trim() || "";
-              if (/^\$\d{2,4}(\.\d{2})?$/.test(t)) {
-                return { price: t.replace("$", ""), type: "element" };
+        // Strategy 2: Look for table rows or structured price listings
+        const rows = document.querySelectorAll("tr, [class*='row'], [class*='listing'], [class*='price']");
+        for (const row of rows) {
+          const rowText = row.textContent || "";
+          for (const platform of platforms) {
+            if (rowText.toLowerCase().includes(platform.toLowerCase())) {
+              const priceMatch = rowText.match(/\$(\d[\d,]*(?:\.\d{2})?)/);
+              if (priceMatch && !prices[platform.toLowerCase().replace(/\s+/g, "-")]) {
+                prices[platform.toLowerCase().replace(/\s+/g, "-")] = parseFloat(priceMatch[1].replace(",", ""));
               }
             }
           }
+        }
 
-          return null;
-        });
+        // Strategy 3: Get any "get-in" or "from" price as fallback
+        let getInPrice = null;
+        const getInMatch = text.match(/(?:get[- ]?in|from|starting at|lowest)[:\s]*\$(\d[\d,]*(?:\.\d{2})?)/i);
+        if (getInMatch) getInPrice = parseFloat(getInMatch[1].replace(",", ""));
 
-        if (priceData) {
-          const price = parseFloat(priceData.price.replace(",", ""));
-          console.log(`  Get-in price: $${price} (found via ${priceData.type})`);
+        // Also grab all dollar amounts on page as context
+        const allPrices = [];
+        const allMatches = text.matchAll(/\$(\d{2,4}(?:\.\d{2})?)/g);
+        for (const m of allMatches) {
+          const p = parseFloat(m[1]);
+          if (p >= 10 && p <= 10000) allPrices.push(p);
+        }
+
+        return { platforms: prices, getInPrice, allPrices: [...new Set(allPrices)].sort((a, b) => a - b).slice(0, 10) };
+      });
+
+      console.log("  Platform prices:", JSON.stringify(platformPrices.platforms));
+      console.log("  Get-in price:", platformPrices.getInPrice);
+      console.log("  All prices on page:", platformPrices.allPrices);
+
+      // Post per-platform prices as separate snapshots
+      const platformEntries = Object.entries(platformPrices.platforms);
+      if (platformEntries.length > 0) {
+        for (const [platform, price] of platformEntries) {
+          console.log(`  ${platform}: $${price}`);
           results.push({
             timestamp: Date.now(),
-            source: "ticketdata",
+            source: platform,
             matchSlug: watch.slug,
             minPrice: price,
             maxPrice: price,
             currency: "USD",
             url: eventLink,
           });
-        } else {
-          console.log("  No price found on event page");
-          await page.screenshot({ path: `scraper/debug-${watch.slug}-event.png`, fullPage: false });
-          console.log("  Debug screenshot saved");
         }
+      } else if (platformPrices.getInPrice) {
+        console.log(`  Get-in (no platform breakdown): $${platformPrices.getInPrice}`);
+        results.push({
+          timestamp: Date.now(),
+          source: "ticketdata",
+          matchSlug: watch.slug,
+          minPrice: platformPrices.getInPrice,
+          maxPrice: platformPrices.getInPrice,
+          currency: "USD",
+          url: eventLink,
+        });
+      } else if (platformPrices.allPrices.length > 0) {
+        const lowest = platformPrices.allPrices[0];
+        console.log(`  Fallback lowest price on page: $${lowest}`);
+        results.push({
+          timestamp: Date.now(),
+          source: "ticketdata",
+          matchSlug: watch.slug,
+          minPrice: lowest,
+          maxPrice: platformPrices.allPrices[platformPrices.allPrices.length - 1],
+          currency: "USD",
+          url: eventLink,
+        });
       } else {
-        console.log("  No event link found in search results");
-        await page.screenshot({ path: `scraper/debug-${watch.slug}-search.png`, fullPage: false });
-        console.log("  Debug screenshot saved");
+        console.log("  No prices found at all");
+        await page.screenshot({ path: `scraper/debug-${watch.slug}-event.png` });
       }
     } catch (err) {
       console.error(`  Error: ${err.message}`);
@@ -144,7 +176,7 @@ async function main() {
     const body = await res.json();
     console.log("Worker response:", JSON.stringify(body));
   } else {
-    console.log("\nNo prices scraped this run");
+    console.log("\nNo prices scraped");
   }
 }
 

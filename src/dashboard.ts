@@ -1,7 +1,7 @@
 import { Env, PriceSnapshot } from "./types";
 import { getWatches, getLatestPrice, getLastCheck, getPriceHistory, getSettings } from "./storage";
 
-const SOURCES = ["ticketmaster", "ticketdata"];
+const SOURCES = ["stubhub", "seatgeek", "vivid-seats", "gametime", "tickpick", "ticketdata"];
 
 export async function renderDashboard(env: Env): Promise<Response> {
   const watches = await getWatches(env);
@@ -422,7 +422,7 @@ function renderAccordionChart(idx) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const datasets = [];
-  const colors = {ticketmaster:'#9b72b0',ticketdata:'#e88ca0',seatgeek:'#6a9e6f'};
+  const colors = {stubhub:'#3b1c8c',seatgeek:'#4caf50',gametime:'#1a1a2e','vivid-seats':'#e91e63',tickpick:'#ff9800',ticketdata:'#9b72b0'};
   for (const [source, data] of Object.entries(event.sources || {})) {
     if (!data.history || data.history.length === 0) continue;
     datasets.push({
@@ -516,7 +516,7 @@ function renderChart(event) {
   const ctx = document.getElementById('priceChart').getContext('2d');
   if (chart) chart.destroy();
   const datasets = [];
-  const colors = {ticketmaster:'#9b72b0',ticketdata:'#e88ca0',seatgeek:'#6a9e6f'};
+  const colors = {stubhub:'#3b1c8c',seatgeek:'#4caf50',gametime:'#1a1a2e','vivid-seats':'#e91e63',tickpick:'#ff9800',ticketdata:'#9b72b0'};
   for (const [source, data] of Object.entries(event.sources)) {
     if (data.history.length === 0) continue;
     datasets.push({
