@@ -44,73 +44,78 @@ function buildHtml(watchData: any[], settings: any): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Event Ticket Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Dancing+Script:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:#faf6f1;color:#3d2c1e;padding:16px;max-width:960px;margin:0 auto}
-    h1{font-size:1.6rem;color:#3d2c1e;margin-bottom:2px}
-    h2{font-size:1.1rem;color:#3d2c1e;margin:18px 0 10px}
-    .subtitle{color:#8a7265;font-size:.82rem;margin-bottom:16px}
-    .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;border-bottom:2px solid #e8ddd4;padding-bottom:8px}
-    .tab{padding:8px 16px;border-radius:20px;border:none;background:transparent;color:#8a7265;cursor:pointer;font-size:.84rem;font-weight:500;transition:all .15s}
-    .tab:hover{background:#f0e6dc;color:#3d2c1e}
-    .tab.active{background:#c9a88c;color:#fff}
-    .tab.active:hover{background:#b8956f}
+    body{font-family:'Inter',system-ui,-apple-system,sans-serif;background-color:#ece4f0;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cg transform='translate(40,40)'%3E%3Cellipse cx='0' cy='-12' rx='5' ry='9' fill='%23fff' opacity='.7'/%3E%3Cellipse cx='11.4' cy='-3.7' rx='5' ry='9' fill='%23fff' opacity='.7' transform='rotate(72)'/%3E%3Cellipse cx='7' cy='9.7' rx='5' ry='9' fill='%23fff' opacity='.7' transform='rotate(144)'/%3E%3Cellipse cx='-7' cy='9.7' rx='5' ry='9' fill='%23fff' opacity='.7' transform='rotate(216)'/%3E%3Cellipse cx='-11.4' cy='-3.7' rx='5' ry='9' fill='%23fff' opacity='.7' transform='rotate(288)'/%3E%3Ccircle cx='0' cy='0' r='4' fill='%23fef9c3' opacity='.8'/%3E%3C/g%3E%3C/svg%3E");background-size:80px 80px;color:#3a2d4f;padding:16px;max-width:960px;margin:0 auto;min-height:100vh}
+    h1{font-family:'Playfair Display',serif;font-size:2rem;color:#5a3d7a;margin-bottom:2px;font-weight:900}
+    h2{font-family:'Dancing Script',cursive;font-size:1.4rem;color:#5a3d7a;margin:18px 0 10px;font-weight:700}
+    .subtitle{color:#8a7699;font-size:.82rem;margin-bottom:16px}
+    .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;border-bottom:2px solid #e6dced;padding-bottom:8px}
+    .tab{padding:8px 16px;border-radius:20px;border:none;background:transparent;color:#8a7699;cursor:pointer;font-size:.84rem;font-weight:500;transition:all .15s}
+    .tab:hover{background:#efe6f5;color:#5a3d7a}
+    .tab.active{background:#9b72b0;color:#fff}
+    .tab.active:hover{background:#8a5fa0}
     .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:16px}
-    .card{background:#fff;border:1px solid #e8ddd4;border-radius:14px;padding:14px;transition:box-shadow .15s}
-    .card:hover{box-shadow:0 4px 16px rgba(61,44,30,.08)}
-    .card-label{font-size:.7rem;color:#8a7265;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
-    .card-value{font-size:1.6rem;font-weight:700;color:#3d2c1e}
-    .card-value.green{color:#5a9e6f}.card-value.amber{color:#c9a050}.card-value.red{color:#c45c5c}.card-value.na{color:#c4b5a8;font-size:1.1rem}
-    .card-sub{font-size:.72rem;color:#8a7265;margin-top:3px}
-    .chart-box{background:#fff;border:1px solid #e8ddd4;border-radius:14px;padding:14px;margin-bottom:16px}
+    .card{background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border:1px solid #e6dced;border-radius:14px;padding:14px;transition:box-shadow .15s}
+    .card:hover{box-shadow:0 4px 16px rgba(90,61,122,.08)}
+    .card-label{font-size:.7rem;color:#8a7699;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+    .card-value{font-size:1.6rem;font-weight:700;color:#3a2d4f}
+    .card-value.green{color:#6a9e6f}.card-value.amber{color:#c9a050}.card-value.red{color:#c45c6e}.card-value.na{color:#c4b5cc;font-size:1.1rem}
+    .card-sub{font-size:.72rem;color:#8a7699;margin-top:3px}
+    .chart-box{background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border:1px solid #e6dced;border-radius:14px;padding:14px;margin-bottom:16px}
     canvas{max-height:300px}
-    a{color:#6b8f71;text-decoration:none}a:hover{text-decoration:underline;color:#5a9e6f}
-    .panel{background:#fff;border:1px solid #e8ddd4;border-radius:14px;padding:16px;margin-bottom:16px}
-    input,select{background:#faf6f1;border:1px solid #e8ddd4;color:#3d2c1e;border-radius:8px;padding:8px 10px;font-size:.85rem;width:100%}
-    input:focus,select:focus{outline:none;border-color:#c9a88c}
+    a{color:#9b72b0;text-decoration:none}a:hover{text-decoration:underline;color:#7a5694}
+    .panel{background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border:1px solid #e6dced;border-radius:14px;padding:16px;margin-bottom:16px}
+    input,select{background:#f8f4fb;border:1px solid #e6dced;color:#3a2d4f;border-radius:8px;padding:8px 10px;font-size:.85rem;width:100%}
+    input:focus,select:focus{outline:none;border-color:#9b72b0}
     .btn{padding:8px 16px;border-radius:20px;border:none;font-size:.84rem;font-weight:600;cursor:pointer;transition:all .15s}
-    .btn-primary{background:#c9a88c;color:#fff}.btn-primary:hover{background:#b8956f}
-    .btn-mint{background:#a8d5ba;color:#3d2c1e}.btn-mint:hover{background:#8ec4a3}
-    .btn-pink{background:#f0c4c8;color:#3d2c1e}.btn-pink:hover{background:#e6adb3}
-    .btn-danger{background:#f0c4c8;color:#8b3a3a}.btn-danger:hover{background:#e6adb3}
+    .btn-primary{background:#9b72b0;color:#fff}.btn-primary:hover{background:#8a5fa0}
+    .btn-mint{background:#c8e6d0;color:#2d4f3a}.btn-mint:hover{background:#aed9ba}
+    .btn-pink{background:#f5d5e0;color:#6b3a4a}.btn-pink:hover{background:#f0c0cf}
+    .btn-danger{background:#f5d5e0;color:#8b3a4a}.btn-danger:hover{background:#f0c0cf}
     .btn-sm{padding:5px 12px;font-size:.75rem}
     .form-row{display:flex;gap:8px;align-items:end;margin-bottom:10px}
     .form-group{flex:1}
-    .form-group label{display:block;font-size:.72rem;color:#8a7265;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
+    .form-group label{display:block;font-size:.72rem;color:#8a7699;margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em}
     .search-results{max-height:500px;overflow-y:auto;margin-top:10px}
-    .search-item{display:flex;gap:12px;padding:12px;border:1px solid #e8ddd4;border-radius:12px;margin-bottom:8px;background:#fff;align-items:center;transition:box-shadow .15s}
-    .search-item:hover{box-shadow:0 2px 12px rgba(61,44,30,.06)}
+    .search-item{display:flex;gap:12px;padding:12px;border:1px solid #e6dced;border-radius:12px;margin-bottom:8px;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);align-items:center;transition:box-shadow .15s}
+    .search-item:hover{box-shadow:0 2px 12px rgba(90,61,122,.06)}
     .si-img{width:80px;height:50px;border-radius:8px;object-fit:cover;flex-shrink:0}
     .si-info{flex:1;min-width:0}
-    .si-name{font-size:.88rem;color:#3d2c1e;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .si-detail{font-size:.72rem;color:#8a7265;margin-top:2px}
-    .si-price{font-size:.9rem;font-weight:700;color:#5a9e6f;white-space:nowrap}
-    .si-genre{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.65rem;font-weight:600;background:#f0e6dc;color:#8a7265;margin-top:3px}
+    .si-name{font-size:.88rem;color:#3a2d4f;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .si-detail{font-size:.72rem;color:#8a7699;margin-top:2px}
+    .si-price{font-size:.9rem;font-weight:700;color:#6a9e6f;white-space:nowrap}
+    .si-genre{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.65rem;font-weight:600;background:#efe6f5;color:#7a5694;margin-top:3px}
     .badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:.68rem;font-weight:600}
-    .badge-on{background:#a8d5ba;color:#2d5e3a}.badge-off{background:#f0e6dc;color:#8a7265}
-    .empty{text-align:center;color:#c4b5a8;padding:40px;font-size:.9rem}
-    .footer{text-align:center;font-size:.68rem;color:#c4b5a8;margin-top:24px}
+    .badge-on{background:#c8e6d0;color:#2d5e3a}.badge-off{background:#efe6f5;color:#8a7699}
+    .empty{text-align:center;color:#c4b5cc;padding:40px;font-size:.9rem}
+    .empty::before{content:'\\1F33C ';font-size:1.2em}
+    .empty::after{content:' \\1F33C';font-size:1.2em}
+    .footer{text-align:center;font-size:.68rem;color:#c4b5cc;margin-top:24px}
     .info-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
-    .info-detail{font-size:.78rem;color:#8a7265}
-    .watch-item{display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid #e8ddd4;border-radius:10px;margin-bottom:6px;background:#faf6f1}
+    .info-detail{font-size:.78rem;color:#8a7699}
+    .watch-item{display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid #e6dced;border-radius:10px;margin-bottom:6px;background:#f8f4fb}
     .hidden{display:none}
     .hero{text-align:center;padding:20px 0 10px}
+    .hero h1{font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:900;background:linear-gradient(135deg,#7a4d9e,#c47a9e);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
     .hero-search{max-width:600px;margin:0 auto}
   </style>
 </head>
 <body>
   <div class="hero">
-    <h1>Event Ticket Tracker</h1>
-    <p class="subtitle">Search events &middot; Track prices &middot; Get alerts when they drop</p>
+    <h1>&#127804; Event Ticket Tracker &#127804;</h1>
+    <p class="subtitle">&#127804; Search events &middot; Track prices &middot; Get alerts when they drop &#127804;</p>
   </div>
 
   <div class="tabs" id="tabs"></div>
   <div id="view"></div>
 
   <div class="footer">
-    Powered by Ticketmaster Discovery API &middot; Prices may not reflect all resale listings
+    &#127804; Powered by Ticketmaster Discovery API &middot; Prices may not reflect all resale listings &#127804;
   </div>
 
 <script>
@@ -126,11 +131,11 @@ function init() {
 
 function renderTabs() {
   const c = document.getElementById('tabs');
-  let html = '<button class="tab'+(activeView==='_search'?' active':'')+'" data-view="_search">Explore Events</button>';
+  let html = '<button class="tab'+(activeView==='_search'?' active':'')+'" data-view="_search">&#127804; Explore Events</button>';
   WATCHES.forEach(w => {
     html += '<button class="tab'+(w.slug===activeView?' active':'')+'" data-view="'+w.slug+'">'+w.name+'</button>';
   });
-  html += '<button class="tab'+(activeView==='_alerts'?' active':'')+'" data-view="_alerts">Alerts &amp; Settings</button>';
+  html += '<button class="tab'+(activeView==='_alerts'?' active':'')+'" data-view="_alerts">&#127804; Alerts &amp; Settings</button>';
   c.innerHTML = html;
   c.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
     activeView = t.dataset.view;
@@ -200,8 +205,8 @@ async function doSearch() {
         '</div>'+
         (price?'<div class="si-price">'+price+'</div>':'')+
         (isTracked
-          ? '<span class="badge badge-on">Tracking</span>'
-          : '<button class="btn btn-mint btn-sm" data-event="'+encodeURIComponent(JSON.stringify(r))+'">Track</button>')+
+          ? '<span class="badge badge-on">&#127804; Tracking</span>'
+          : '<button class="btn btn-mint btn-sm" data-event="'+encodeURIComponent(JSON.stringify(r))+'">&#127804; Track</button>')+
       '</div>';
     }).join('')+'</div>';
     box.querySelectorAll('button[data-event]').forEach(btn => {
@@ -294,7 +299,7 @@ function renderChart(event) {
   const ctx = document.getElementById('priceChart').getContext('2d');
   if (chart) chart.destroy();
   const datasets = [];
-  const colors = {ticketmaster:'#c9a88c',seatgeek:'#5a9e6f'};
+  const colors = {ticketmaster:'#9b72b0',seatgeek:'#6a9e6f'};
   for (const [source, data] of Object.entries(event.sources)) {
     if (data.history.length === 0) continue;
     datasets.push({
@@ -308,7 +313,7 @@ function renderChart(event) {
     datasets.push({
       label:'Target ($'+event.maxPrice+')',
       data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
-      borderColor:'#f0c4c8',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,
+      borderColor:'#f0c0cf',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,
     });
   }
   chart = new Chart(ctx,{
@@ -316,10 +321,10 @@ function renderChart(event) {
     options:{
       responsive:true,interaction:{mode:'index',intersect:false},
       scales:{
-        x:{type:'time',time:{tooltipFormat:'MMM d, h:mm a'},grid:{color:'#f0e6dc'},ticks:{color:'#8a7265'}},
-        y:{beginAtZero:false,grid:{color:'#f0e6dc'},ticks:{color:'#8a7265',callback:v=>'$'+v}},
+        x:{type:'time',time:{tooltipFormat:'MMM d, h:mm a'},grid:{color:'#efe6f5'},ticks:{color:'#8a7699'}},
+        y:{beginAtZero:false,grid:{color:'#efe6f5'},ticks:{color:'#8a7699',callback:v=>'$'+v}},
       },
-      plugins:{legend:{labels:{color:'#8a7265'}},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.y}}},
+      plugins:{legend:{labels:{color:'#8a7699'}},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.y}}},
     },
   });
 }
@@ -328,7 +333,7 @@ function renderChart(event) {
 function renderSettingsView(container) {
   const curMethod = SETTINGS.alertMethod || 'ntfy';
   container.innerHTML =
-    '<h2>Notification Settings</h2>'+
+    '<h2>&#127804; Notification Settings</h2>'+
     '<div class="panel">'+
       '<div class="form-group" style="margin-bottom:12px"><label>Alert Method</label>'+
         '<select id="sMethod"><option value="ntfy"'+(curMethod==='ntfy'?' selected':'')+'>ntfy (push notifications)</option><option value="sms"'+(curMethod==='sms'?' selected':'')+'>SMS (text messages)</option><option value="both"'+(curMethod==='both'?' selected':'')+'>Both</option></select></div>'+
@@ -339,9 +344,9 @@ function renderSettingsView(container) {
         '<div class="form-group" style="margin-bottom:10px"><label>SMS Gateway Email</label><input type="text" id="sSms" value="'+(SETTINGS.smsGatewayEmail||'')+'" placeholder="2065551234@tmomail.net"></div></div>'+
       '<button class="btn btn-primary" id="saveSettings">Save Settings</button>'+
     '</div>'+
-    '<h2>Tracked Events</h2>'+
+    '<h2>&#127804; Tracked Events</h2>'+
     '<div class="panel" id="watchList"></div>'+
-    '<h2>Manual Actions</h2>'+
+    '<h2>&#127804; Manual Actions</h2>'+
     '<div class="panel"><button class="btn btn-primary" id="manualCheck">Run Price Check Now</button> <span id="checkStatus" style="font-size:.82rem;color:#8a7265"></span></div>';
 
   const wl = document.getElementById('watchList');

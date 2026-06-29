@@ -2,6 +2,27 @@ import { WatchedEvent, PriceSnapshot } from "../types";
 
 const BASE_URL = "https://app.ticketmaster.com/discovery/v2/events";
 
+const CITY_ALIASES: Record<string, string> = {
+  la: "Los Angeles", nyc: "New York", ny: "New York", sf: "San Francisco",
+  sea: "Seattle", pdx: "Portland", chi: "Chicago", atl: "Atlanta",
+  dc: "Washington", philly: "Philadelphia", phila: "Philadelphia",
+  bos: "Boston", den: "Denver", hou: "Houston", dal: "Dallas", dfw: "Dallas",
+  mia: "Miami", det: "Detroit", mpls: "Minneapolis", stl: "St. Louis",
+  kc: "Kansas City", sd: "San Diego", sj: "San Jose", lv: "Las Vegas",
+  vegas: "Las Vegas", nola: "New Orleans", phl: "Philadelphia",
+  pit: "Pittsburgh", cle: "Cleveland", cin: "Cincinnati", ind: "Indianapolis",
+  slc: "Salt Lake City", jax: "Jacksonville", tb: "Tampa", orl: "Orlando",
+  sac: "Sacramento", aus: "Austin", sa: "San Antonio", msn: "Madison",
+  rdu: "Raleigh", clt: "Charlotte", dtw: "Detroit", mke: "Milwaukee",
+  tor: "Toronto", van: "Vancouver", mtl: "Montreal", cdmx: "Mexico City",
+  gdl: "Guadalajara", mty: "Monterrey", lon: "London", ldn: "London",
+};
+
+function resolveCity(input: string): string {
+  const lower = input.toLowerCase().trim();
+  return CITY_ALIASES[lower] || input;
+}
+
 export interface SearchResult {
   name: string;
   eventId: string;
@@ -27,7 +48,7 @@ export async function searchEvents(
     size: "40",
     sort: "date,asc",
   });
-  if (city) params.set("city", city);
+  if (city) params.set("city", resolveCity(city));
   if (category && category !== "all") {
     params.set("classificationName", category);
   }
@@ -36,7 +57,13 @@ export async function searchEvents(
   if (!res.ok) return [];
 
   const data: any = await res.json();
-  const events = data?._embedded?.events || [];
+  const allEvents = data?._embedded?.events || [];
+  const seen = new Set<string>();
+  const events = allEvents.filter((e: any) => {
+    if (seen.has(e.id)) return false;
+    seen.add(e.id);
+    return true;
+  });
 
   return events.map((e: any) => {
     const venue = e._embedded?.venues?.[0];
