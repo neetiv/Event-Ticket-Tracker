@@ -1,9 +1,9 @@
 name: Scrape Ticket Prices
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"  # Every 15 minutes
-  workflow_dispatch: {}      # Manual trigger
+  # schedule:
+  #   - cron: "*/15 * * * *"  # Uncomment to re-enable
+  workflow_dispatch: {}      # Manual trigger only
 
 jobs:
   scrape:
