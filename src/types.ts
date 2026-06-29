@@ -1,18 +1,18 @@
-export interface WatchedMatch {
+export interface WatchedEvent {
   slug: string;
   name: string;
-  date: string; // ISO 8601
+  date: string;
   venue: string;
+  city: string;
   ticketmasterEventId?: string;
-  seatgeekEventSlug?: string;
   ticketsWanted: number;
   maxPrice: number;
   alertsEnabled: boolean;
-  links: { label: string; url: string }[];
+  url: string;
 }
 
 export interface PriceSnapshot {
-  timestamp: number; // Unix ms
+  timestamp: number;
   source: string;
   matchSlug: string;
   minPrice: number | null;
@@ -32,6 +32,5 @@ export interface Env {
   TICKETMASTER_API_KEY: string;
   NTFY_TOPIC: string;
   NTFY_TOKEN?: string;
-  SMS_GATEWAY_EMAIL?: string;
   DRY_RUN: string;
 }

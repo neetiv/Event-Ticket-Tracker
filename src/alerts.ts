@@ -1,35 +1,23 @@
-import { Env, WatchedMatch, PriceSnapshot, UserSettings } from "./types";
-import { ALERT_COOLDOWN_MS, FIFA_DISCOUNT_FACTOR, FIFA_TICKETS_URL } from "./config";
+import { Env, WatchedEvent, PriceSnapshot, UserSettings } from "./types";
+import { ALERT_COOLDOWN_MS } from "./config";
 import { getLastAlertTime, setLastAlertTime, getSettings } from "./storage";
 
 export async function checkAndAlert(
   env: Env,
-  match: WatchedMatch,
+  event: WatchedEvent,
   snapshot: PriceSnapshot
 ): Promise<void> {
-  if (!match.alertsEnabled) return;
+  if (!event.alertsEnabled) return;
   if (snapshot.minPrice === null) return;
+  if (snapshot.minPrice > event.maxPrice) return;
 
   const settings = await getSettings(env);
-  if (!settings.ntfyTopic) return;
+  if (!settings.ntfyTopic && settings.alertMethod !== "sms") return;
 
-  const estimatedFifaPrice = Math.round(snapshot.minPrice * FIFA_DISCOUNT_FACTOR);
-  const fifaCouldHitTarget = estimatedFifaPrice <= match.maxPrice;
-  const sourceHitsTarget = snapshot.minPrice <= match.maxPrice;
+  const lastAlert = await getLastAlertTime(env, event.slug, snapshot.source);
+  if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) return;
 
-  if (!sourceHitsTarget && !fifaCouldHitTarget) return;
-
-  const alertKey = fifaCouldHitTarget && !sourceHitsTarget
-    ? `${snapshot.source}-fifa`
-    : snapshot.source;
-
-  const lastAlert = await getLastAlertTime(env, match.slug, alertKey);
-  if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) {
-    console.log(`Skipping alert for ${match.slug}/${alertKey} — cooldown active`);
-    return;
-  }
-
-  const matchDate = new Date(match.date).toLocaleDateString("en-US", {
+  const eventDate = new Date(event.date).toLocaleDateString("en-US", {
     weekday: "long",
     month: "short",
     day: "numeric",
@@ -37,105 +25,48 @@ export async function checkAndAlert(
     minute: "2-digit",
   });
 
-  let title: string;
-  let body: string;
-  let clickUrl: string;
-  let priority: string;
-
-  if (sourceHitsTarget) {
-    title = `${match.name} — $${snapshot.minPrice}!`;
-    body = [
-      `${snapshot.source} has tickets at $${snapshot.minPrice}`,
-      match.ticketsWanted > 1 ? `(looking for ${match.ticketsWanted} together)` : "",
-      `Target: ≤$${match.maxPrice}`,
-      "",
-      `FIFA est. ~$${estimatedFifaPrice} (typically 20-25% lower)`,
-      `Check FIFA resale too: ${FIFA_TICKETS_URL}`,
-      "",
-      `${matchDate} · ${match.venue}`,
-    ].filter(Boolean).join("\n");
-    clickUrl = snapshot.url;
-    priority = snapshot.minPrice <= match.maxPrice * 0.85 ? "urgent" : "high";
-  } else {
-    title = `CHECK FIFA: ${match.name} est. ~$${estimatedFifaPrice}`;
-    body = [
-      `${snapshot.source} is at $${snapshot.minPrice} (above your $${match.maxPrice} target)`,
-      `But FIFA resale is typically 20-25% lower`,
-      `Estimated FIFA price: ~$${estimatedFifaPrice}`,
-      match.ticketsWanted > 1 ? `(looking for ${match.ticketsWanted} together)` : "",
-      "",
-      `Check FIFA resale now!`,
-      "",
-      `${matchDate} · ${match.venue}`,
-    ].filter(Boolean).join("\n");
-    clickUrl = FIFA_TICKETS_URL;
-    priority = "high";
-  }
+  const title = `${event.name} — $${snapshot.minPrice}!`;
+  const body = [
+    `${snapshot.source} has tickets at $${snapshot.minPrice}`,
+    event.ticketsWanted > 1 ? `(looking for ${event.ticketsWanted} together)` : "",
+    `Target: ≤$${event.maxPrice}`,
+    "",
+    `${eventDate}`,
+    `${event.venue}, ${event.city}`,
+  ].filter(Boolean).join("\n");
 
   if (env.DRY_RUN === "true") {
-    console.log(`[DRY RUN] Would send alert:\n  Title: ${title}\n  Body: ${body}\n  URL: ${clickUrl}`);
+    console.log(`[DRY RUN] Alert: ${title}\n${body}`);
     return;
   }
 
-  const sourceName = sourceHitsTarget
-    ? (snapshot.url.includes("seatgeek") ? "SeatGeek" : "Ticketmaster")
-    : "FIFA Tickets";
-
   const method = settings.alertMethod || "ntfy";
-  const sendViaNtfy = (method === "ntfy" || method === "both") && settings.ntfyTopic;
-  const sendViaSms = (method === "sms" || method === "both") && settings.smsGatewayEmail;
-
   await Promise.all([
-    sendViaNtfy
-      ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, clickUrl, priority, sourceName)
+    (method === "ntfy" || method === "both") && settings.ntfyTopic
+      ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, snapshot.url, snapshot.minPrice <= event.maxPrice * 0.85 ? "urgent" : "high")
       : Promise.resolve(),
-    sendViaSms
-      ? sendSmsGateway(settings.smsGatewayEmail!, title, clickUrl)
+    (method === "sms" || method === "both") && settings.smsGatewayEmail
+      ? sendSms(settings.smsGatewayEmail, title, snapshot.url)
       : Promise.resolve(),
   ]);
 
-  await setLastAlertTime(env, match.slug, alertKey);
-  console.log(`Alert sent for ${match.slug}/${alertKey} at $${snapshot.minPrice} (FIFA est. ~$${estimatedFifaPrice})`);
+  await setLastAlertTime(env, event.slug, snapshot.source);
+  console.log(`Alert sent: ${event.slug} at $${snapshot.minPrice}`);
 }
 
-async function sendNtfy(
-  topic: string,
-  token: string | undefined,
-  title: string,
-  body: string,
-  url: string,
-  priority: string,
-  sourceName: string
-): Promise<void> {
+async function sendNtfy(topic: string, token: string | undefined, title: string, body: string, url: string, priority: string): Promise<void> {
   const headers: Record<string, string> = {
     Title: title,
     Priority: priority,
-    Tags: "soccer,ticket",
+    Tags: "ticket",
     Click: url,
-    Actions: `view, Open ${sourceName}, ${url}`,
   };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`https://ntfy.sh/${topic}`, {
-    method: "POST",
-    headers,
-    body,
-  });
-
-  if (!res.ok) {
-    console.error(`ntfy error: ${res.status} ${await res.text()}`);
-  }
+  const res = await fetch(`https://ntfy.sh/${topic}`, { method: "POST", headers, body });
+  if (!res.ok) console.error(`ntfy error: ${res.status}`);
 }
 
-async function sendSmsGateway(
-  gatewayEmail: string,
-  subject: string,
-  url: string
-): Promise<void> {
-  console.log(
-    `[SMS] Would email ${gatewayEmail}: "${subject}" — ${url}`
-  );
+async function sendSms(email: string, subject: string, url: string): Promise<void> {
+  console.log(`[SMS] ${email}: "${subject}" — ${url}`);
 }
