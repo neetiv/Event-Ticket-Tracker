@@ -141,6 +141,7 @@ function buildHtml(watchData: any[], settings: any): string {
 <script>
 const WATCHES = ${JSON.stringify(watchData)};
 const SETTINGS = ${JSON.stringify(settings)};
+const SOURCE_LABELS = ${JSON.stringify({ "get-in": "Resale Get-In", "ticketmaster": "Ticketmaster" })};
 let activeView = '_search';
 let chart = null;
 
