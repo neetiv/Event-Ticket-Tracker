@@ -1,10 +1,93 @@
 import { chromium } from "playwright";
 
 const WORKER_URL = process.env.WORKER_URL;
-
 if (!WORKER_URL) {
   console.error("WORKER_URL env var required");
   process.exit(1);
+}
+
+// "Ariana Grande - The Eternal Sunshine Tour" → "ariana-grande"
+function toPerformerSlug(name) {
+  const base = name.split(/\s*[-–:]\s*/)[0].trim();
+  return base.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, "-");
+}
+
+// Find best-matching event on a TicketData performer page
+async function findEventLink(page, watch) {
+  const slugVariants = [
+    toPerformerSlug(watch.name),
+    watch.name.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, "-").slice(0, 60),
+  ];
+
+  for (const slug of [...new Set(slugVariants)]) {
+    const url = `https://www.ticketdata.com/performer/${slug}`;
+    console.log(`  Trying: ${url}`);
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+      await page.waitForTimeout(3000);
+
+      const events = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('a[href*="/events/"]'))
+          .map((a) => ({
+            href: a.href,
+            text: (a.closest("tr") || a).innerText || "",
+          }))
+          .filter((e) => /\/events\/\d+/.test(e.href))
+      );
+
+      if (events.length === 0) {
+        console.log("  No events found on performer page");
+        continue;
+      }
+
+      // Match by date and/or venue
+      const watchDate = new Date(watch.date);
+      const mm = watchDate.getMonth() + 1;
+      const dd = watchDate.getDate();
+      const yyyy = watchDate.getFullYear();
+      const venuePart = watch.venue.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
+
+      let best = null;
+      for (const ev of events) {
+        const t = ev.text.toLowerCase().replace(/[^a-z0-9/\s]/g, "");
+        const dateHit = t.includes(`${mm}/${dd}`) || t.includes(String(yyyy));
+        const venueHit = venuePart && t.replace(/\s/g, "").includes(venuePart);
+        if (dateHit && venueHit) { best = ev; break; }
+        if ((dateHit || venueHit) && !best) best = ev;
+      }
+
+      const chosen = best || events[0];
+      console.log(`  Matched event: ${chosen.href}`);
+      return chosen.href;
+    } catch (err) {
+      console.log(`  Error for slug "${slug}": ${err.message}`);
+    }
+  }
+  return null;
+}
+
+async function scrapeEventPrice(page, eventUrl) {
+  await page.goto(eventUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.waitForTimeout(5000);
+
+  return await page.evaluate(() => {
+    const text = document.body.innerText;
+
+    // "Current Get-In Price\n$427\nper ticket"
+    const m = text.match(/Current Get-In Price[\s\S]{0,80}?\$([\d,]+)/i);
+    const price = m ? parseFloat(m[1].replace(/,/g, "")) : null;
+
+    // Grab buy links
+    const links = {};
+    for (const a of document.querySelectorAll("a[href]")) {
+      const href = a.href;
+      const label = (a.textContent || "").toLowerCase();
+      if (!links.ticketmaster && (href.includes("ticketmaster") || label.includes("ticketmaster"))) links.ticketmaster = href;
+      if (!links.vivid && (href.includes("vividseats") || label.includes("vivid"))) links.vivid = href;
+      if (!links.stubhub && (href.includes("stubhub") || label.includes("stubhub"))) links.stubhub = href;
+    }
+    return { price, links };
+  });
 }
 
 async function main() {
@@ -16,13 +99,11 @@ async function main() {
     console.log("No watches configured — nothing to scrape");
     return;
   }
-
   console.log(`Found ${watches.length} watched event(s)`);
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     viewport: { width: 1280, height: 800 },
   });
 
@@ -33,133 +114,38 @@ async function main() {
       console.log(`Skipping ${watch.slug} — already passed`);
       continue;
     }
-
-    const searchName = watch.name.replace(/[-–:]/g, " ").replace(/\s+/g, " ").trim();
-    const searchUrl = `https://www.ticketdata.com/search?q=${encodeURIComponent(searchName)}`;
-    console.log(`\nSearching TicketData: ${searchName}`);
+    console.log(`\nProcessing: ${watch.name}`);
 
     const page = await context.newPage();
     try {
-      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await page.waitForTimeout(4000);
-
-      // Find the first event link
-      const eventLink = await page.evaluate(() => {
-        const links = document.querySelectorAll('a[href*="/event/"]');
-        return links.length > 0 ? links[0].href : null;
-      });
-
-      if (!eventLink) {
-        console.log("  No event found in search results");
-        await page.screenshot({ path: `scraper/debug-${watch.slug}-search.png` });
+      const eventUrl = await findEventLink(page, watch);
+      if (!eventUrl) {
+        console.log("  No TicketData page found");
+        await page.screenshot({ path: `debug-${watch.slug}-notfound.png` });
         await page.close();
         continue;
       }
 
-      console.log(`  Event page: ${eventLink}`);
-      await page.goto(eventLink, { waitUntil: "domcontentloaded", timeout: 30000 });
-      await page.waitForTimeout(5000);
+      const { price, links } = await scrapeEventPrice(page, eventUrl);
+      console.log(`  Get-in price: ${price !== null ? "$" + price : "not found"}`);
+      console.log(`  Buy links: ${JSON.stringify(links)}`);
 
-      // Extract per-platform prices
-      const platformPrices = await page.evaluate(() => {
-        const prices = {};
-        const text = document.body.innerText;
-        const platforms = ["StubHub", "SeatGeek", "Vivid Seats", "Gametime", "TickPick", "MegaSeats"];
-
-        // Strategy 1: Look for platform names near dollar amounts
-        for (const platform of platforms) {
-          const patterns = [
-            new RegExp(platform + "[\\s\\S]{0,50}?\\$(\\d[\\d,]*(?:\\.\\d{2})?)", "i"),
-            new RegExp("\\$(\\d[\\d,]*(?:\\.\\d{2})?)\\s*(?:on|at|via)?\\s*" + platform, "i"),
-          ];
-          for (const pat of patterns) {
-            const m = text.match(pat);
-            if (m) {
-              prices[platform.toLowerCase().replace(/\s+/g, "-")] = parseFloat(m[1].replace(",", ""));
-              break;
-            }
-          }
-        }
-
-        // Strategy 2: Look for table rows or structured price listings
-        const rows = document.querySelectorAll("tr, [class*='row'], [class*='listing'], [class*='price']");
-        for (const row of rows) {
-          const rowText = row.textContent || "";
-          for (const platform of platforms) {
-            if (rowText.toLowerCase().includes(platform.toLowerCase())) {
-              const priceMatch = rowText.match(/\$(\d[\d,]*(?:\.\d{2})?)/);
-              if (priceMatch && !prices[platform.toLowerCase().replace(/\s+/g, "-")]) {
-                prices[platform.toLowerCase().replace(/\s+/g, "-")] = parseFloat(priceMatch[1].replace(",", ""));
-              }
-            }
-          }
-        }
-
-        // Strategy 3: Get any "get-in" or "from" price as fallback
-        let getInPrice = null;
-        const getInMatch = text.match(/(?:get[- ]?in|from|starting at|lowest)[:\s]*\$(\d[\d,]*(?:\.\d{2})?)/i);
-        if (getInMatch) getInPrice = parseFloat(getInMatch[1].replace(",", ""));
-
-        // Also grab all dollar amounts on page as context
-        const allPrices = [];
-        const allMatches = text.matchAll(/\$(\d{2,4}(?:\.\d{2})?)/g);
-        for (const m of allMatches) {
-          const p = parseFloat(m[1]);
-          if (p >= 10 && p <= 10000) allPrices.push(p);
-        }
-
-        return { platforms: prices, getInPrice, allPrices: [...new Set(allPrices)].sort((a, b) => a - b).slice(0, 10) };
-      });
-
-      console.log("  Platform prices:", JSON.stringify(platformPrices.platforms));
-      console.log("  Get-in price:", platformPrices.getInPrice);
-      console.log("  All prices on page:", platformPrices.allPrices);
-
-      // Post per-platform prices as separate snapshots
-      const platformEntries = Object.entries(platformPrices.platforms);
-      if (platformEntries.length > 0) {
-        for (const [platform, price] of platformEntries) {
-          console.log(`  ${platform}: $${price}`);
-          results.push({
-            timestamp: Date.now(),
-            source: platform,
-            matchSlug: watch.slug,
-            minPrice: price,
-            maxPrice: price,
-            currency: "USD",
-            url: eventLink,
-          });
-        }
-      } else if (platformPrices.getInPrice) {
-        console.log(`  Get-in (no platform breakdown): $${platformPrices.getInPrice}`);
+      if (price !== null) {
         results.push({
           timestamp: Date.now(),
-          source: "ticketdata",
+          source: "get-in",
           matchSlug: watch.slug,
-          minPrice: platformPrices.getInPrice,
-          maxPrice: platformPrices.getInPrice,
+          minPrice: price,
+          maxPrice: price,
           currency: "USD",
-          url: eventLink,
-        });
-      } else if (platformPrices.allPrices.length > 0) {
-        const lowest = platformPrices.allPrices[0];
-        console.log(`  Fallback lowest price on page: $${lowest}`);
-        results.push({
-          timestamp: Date.now(),
-          source: "ticketdata",
-          matchSlug: watch.slug,
-          minPrice: lowest,
-          maxPrice: platformPrices.allPrices[platformPrices.allPrices.length - 1],
-          currency: "USD",
-          url: eventLink,
+          url: eventUrl,
         });
       } else {
-        console.log("  No prices found at all");
-        await page.screenshot({ path: `scraper/debug-${watch.slug}-event.png` });
+        await page.screenshot({ path: `debug-${watch.slug}-noprice.png` });
       }
     } catch (err) {
       console.error(`  Error: ${err.message}`);
-      await page.screenshot({ path: `scraper/debug-${watch.slug}-error.png` }).catch(() => {});
+      await page.screenshot({ path: `debug-${watch.slug}-error.png` }).catch(() => {});
     }
     await page.close();
   }
@@ -173,8 +159,7 @@ async function main() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prices: results }),
     });
-    const body = await res.json();
-    console.log("Worker response:", JSON.stringify(body));
+    console.log("Worker response:", JSON.stringify(await res.json()));
   } else {
     console.log("\nNo prices scraped");
   }

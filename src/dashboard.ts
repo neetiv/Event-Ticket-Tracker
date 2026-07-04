@@ -1,7 +1,8 @@
 import { Env, PriceSnapshot } from "./types";
 import { getWatches, getLatestPrice, getLastCheck, getPriceHistory, getSettings } from "./storage";
 
-const SOURCES = ["stubhub", "seatgeek", "vivid-seats", "gametime", "tickpick"];
+const SOURCES = ["get-in", "ticketmaster"];
+const SOURCE_LABELS: Record<string, string> = { "get-in": "Resale Get-In", "ticketmaster": "Ticketmaster" };
 
 export async function renderDashboard(env: Env): Promise<Response> {
   const watches = await getWatches(env);
@@ -303,7 +304,7 @@ function renderTrackedView(container) {
 
     let cardsHtml = '';
     for (const [source, data] of Object.entries(event.sources || {})) {
-      const label = source.charAt(0).toUpperCase() + source.slice(1);
+      const label = SOURCE_LABELS[source] || source.charAt(0).toUpperCase() + source.slice(1);
       const latest = data.latest;
       let cls='na', val='No data yet', sub='';
       if (latest && latest.minPrice !== null) {
@@ -313,10 +314,13 @@ function renderTrackedView(container) {
         if (latest.maxPrice && latest.maxPrice !== latest.minPrice) sub = 'Range: $'+latest.minPrice+' – $'+latest.maxPrice;
       }
       const chk = data.lastCheck ? timeAgo(new Date(data.lastCheck)) : 'never';
-      const link = latest?.url ? ' &middot; <a href="'+latest.url+'" target="_blank">Buy tickets</a>' : '';
+      const buyUrl = latest?.url || (source === 'ticketmaster' ? event.url : null);
+      const link = buyUrl ? ' &middot; <a href="'+buyUrl+'" target="_blank">Buy tickets</a>' : '';
+      const note = source === 'ticketmaster' && (!latest || latest.minPrice === null)
+        ? '<div class="card-sub" style="color:#b6a0c8">Primary market — often sold out for popular events</div>' : '';
       cardsHtml += '<div class="card"><div class="card-label">'+label+'</div><div class="card-value '+cls+'">'+val+'</div>'+
         (sub?'<div class="card-sub">'+sub+'</div>':'')+
-        '<div class="card-sub">Checked '+chk+link+'</div></div>';
+        '<div class="card-sub">Checked '+chk+link+'</div>'+note+'</div>';
     }
 
     html += '<div class="accordion">'+
@@ -422,11 +426,11 @@ function renderAccordionChart(idx) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const datasets = [];
-  const colors = {stubhub:'#3b1c8c',seatgeek:'#4caf50',gametime:'#1a1a2e','vivid-seats':'#e91e63',tickpick:'#ff9800'};
+  const colors = {'get-in':'#7c4daf','ticketmaster':'#026CDF'};
   for (const [source, data] of Object.entries(event.sources || {})) {
     if (!data.history || data.history.length === 0) continue;
     datasets.push({
-      label: source.charAt(0).toUpperCase()+source.slice(1),
+      label: SOURCE_LABELS[source] || source.charAt(0).toUpperCase()+source.slice(1),
       data: data.history.filter(h=>h.minPrice!==null).map(h=>({x:h.timestamp,y:h.minPrice})),
       borderColor:colors[source]||'#9b72b0',backgroundColor:(colors[source]||'#9b72b0')+'20',
       borderWidth:2,pointRadius:1.5,tension:0.3,fill:true,
@@ -463,7 +467,7 @@ function renderEventView(container, event) {
 
   let cardsHtml = '';
   for (const [source, data] of Object.entries(event.sources)) {
-    const label = source.charAt(0).toUpperCase() + source.slice(1);
+    const label = SOURCE_LABELS[source] || source.charAt(0).toUpperCase() + source.slice(1);
     const latest = data.latest;
     let cls='na', val='No data yet', sub='';
     if (latest && latest.minPrice !== null) {
@@ -473,7 +477,8 @@ function renderEventView(container, event) {
       if (latest.maxPrice && latest.maxPrice !== latest.minPrice) sub = 'Range: $'+latest.minPrice+' – $'+latest.maxPrice;
     }
     const chk = data.lastCheck ? timeAgo(new Date(data.lastCheck)) : 'never';
-    const link = latest?.url ? ' &middot; <a href="'+latest.url+'" target="_blank">Buy tickets</a>' : '';
+    const buyUrl = latest?.url || (source === 'ticketmaster' ? event.url : null);
+    const link = buyUrl ? ' &middot; <a href="'+buyUrl+'" target="_blank">Buy tickets</a>' : '';
     cardsHtml += '<div class="card"><div class="card-label">'+label+'</div><div class="card-value '+cls+'">'+val+'</div>'+
       (sub?'<div class="card-sub">'+sub+'</div>':'')+
       '<div class="card-sub">Checked '+chk+link+'</div></div>';
@@ -516,11 +521,11 @@ function renderChart(event) {
   const ctx = document.getElementById('priceChart').getContext('2d');
   if (chart) chart.destroy();
   const datasets = [];
-  const colors = {stubhub:'#3b1c8c',seatgeek:'#4caf50',gametime:'#1a1a2e','vivid-seats':'#e91e63',tickpick:'#ff9800'};
+  const colors = {'get-in':'#7c4daf','ticketmaster':'#026CDF'};
   for (const [source, data] of Object.entries(event.sources)) {
     if (data.history.length === 0) continue;
     datasets.push({
-      label: source.charAt(0).toUpperCase()+source.slice(1),
+      label: SOURCE_LABELS[source] || source.charAt(0).toUpperCase()+source.slice(1),
       data: data.history.filter(h=>h.minPrice!==null).map(h=>({x:h.timestamp,y:h.minPrice})),
       borderColor:colors[source]||'#c9a88c',backgroundColor:(colors[source]||'#c9a88c')+'20',
       borderWidth:2,pointRadius:1.5,tension:0.3,fill:true,
