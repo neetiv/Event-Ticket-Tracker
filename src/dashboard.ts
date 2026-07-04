@@ -297,11 +297,28 @@ function renderTrackedView(container) {
   let html = '<h2>&#127800; Your Tracked Events</h2>';
   WATCHES.forEach((event, idx) => {
     const d = new Date(event.date);
+    const isPast = d < new Date();
     const dateStr = d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
     const daysLeft = Math.max(0, Math.ceil((d - Date.now()) / 86400000));
     const badge = event.alertsEnabled
       ? '<span class="badge badge-on">Alert &le;$'+event.maxPrice+'</span>'
       : '<span class="badge badge-off">Tracking only</span>';
+
+    if (isPast) {
+      html += '<div class="accordion" style="border-color:#e6dced;opacity:.85">'+
+        '<div class="accordion-header" style="cursor:default">'+
+          '<div>'+
+            '<div class="accordion-title" style="color:#a090b8">&#127804; '+event.name+'</div>'+
+            '<div class="accordion-meta">'+event.venue+', '+event.city+' &middot; '+dateStr+'</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="padding:10px 16px 14px;display:flex;align-items:center;gap:12px;background:rgba(255,240,245,.6);border-top:1px solid #f0e4f7">'+
+          '<span style="font-size:.82rem;color:#9b72b0">&#9888;&#65039; This show has already occurred.</span>'+
+          '<button class="btn btn-danger btn-sm remove-watch" data-slug="'+event.slug+'" style="margin-left:auto">Remove</button>'+
+        '</div>'+
+      '</div>';
+      return;
+    }
 
     let cardsHtml = '';
     for (const [source, data] of Object.entries(event.sources || {})) {
