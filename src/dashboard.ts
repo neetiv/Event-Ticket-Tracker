@@ -314,7 +314,7 @@ function renderTrackedView(container) {
         '</div>'+
         '<div style="padding:10px 16px 14px;display:flex;align-items:center;gap:12px;background:rgba(255,240,245,.6);border-top:1px solid #f0e4f7">'+
           '<span style="font-size:.82rem;color:#9b72b0">&#9888;&#65039; This show has already occurred.</span>'+
-          '<button class="btn btn-danger btn-sm remove-watch" data-slug="'+event.slug+'" style="margin-left:auto">Remove</button>'+
+          '<button class="btn btn-pink btn-sm remove-watch" data-slug="'+event.slug+'" style="margin-left:auto">Remove</button>'+
         '</div>'+
       '</div>';
       return;
