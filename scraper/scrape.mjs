@@ -12,8 +12,7 @@ function toPerformerSlug(name) {
   return base.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, "-");
 }
 
-// Find best-matching event on a TicketData performer page
-async function findEventLink(page, watch) {
+async function scrapeFromPerformerPage(page, watch) {
   const slugVariants = [
     toPerformerSlug(watch.name),
     watch.name.toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, "-").slice(0, 60),
@@ -23,71 +22,65 @@ async function findEventLink(page, watch) {
     const url = `https://www.ticketdata.com/performer/${slug}`;
     console.log(`  Trying: ${url}`);
     try {
-      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
-      await page.waitForTimeout(3000);
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25000 });
+      await page.waitForTimeout(4000);
 
-      const events = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('a[href*="/events/"]'))
-          .map((a) => ({
-            href: a.href,
-            text: (a.closest("tr") || a).innerText || "",
-          }))
-          .filter((e) => /\/events\/\d+/.test(e.href))
-      );
+      // Extract all event rows with href, date text, and price
+      const rows = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll('a[href*="/events/"]'))
+          .map((a) => {
+            const row = a.closest("tr") || a.closest("[class*='row']") || a.parentElement;
+            const text = row ? row.innerText : a.innerText;
+            const priceMatch = text.match(/\$([\d,]+)/);
+            return {
+              href: a.href,
+              text: text.trim(),
+              price: priceMatch ? parseFloat(priceMatch[1].replace(/,/g, "")) : null,
+            };
+          })
+          .filter((r) => /\/events\/\d+/.test(r.href) && r.price !== null);
+      });
 
-      if (events.length === 0) {
-        console.log("  No events found on performer page");
+      if (rows.length === 0) {
+        console.log("  No priced events on performer page");
         continue;
       }
+
+      console.log(`  Found ${rows.length} priced event rows`);
 
       // Match by date and/or venue
       const watchDate = new Date(watch.date);
       const mm = watchDate.getMonth() + 1;
-      const dd = watchDate.getDate();
+      // Try both UTC day and local day since stored dates can be either
+      const ddUTC = watchDate.getUTCDate();
+      const ddLocal = watchDate.getDate();
       const yyyy = watchDate.getFullYear();
-      const venuePart = watch.venue.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 12);
+      const venuePart = watch.venue.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
+      const cityPart = watch.city.split(",")[0].toLowerCase().replace(/[^a-z]/g, "");
 
       let best = null;
-      for (const ev of events) {
-        const t = ev.text.toLowerCase().replace(/[^a-z0-9/\s]/g, "");
-        const dateHit = t.includes(`${mm}/${dd}`) || t.includes(String(yyyy));
-        const venueHit = venuePart && t.replace(/\s/g, "").includes(venuePart);
-        if (dateHit && venueHit) { best = ev; break; }
-        if ((dateHit || venueHit) && !best) best = ev;
+      let bestScore = 0;
+      for (const row of rows) {
+        const t = row.text.toLowerCase();
+        const tClean = t.replace(/[^a-z0-9/\s]/g, "");
+        let score = 0;
+        if (tClean.includes(`${mm}/${ddUTC}`) || tClean.includes(`${mm}/${ddLocal}`)) score += 3;
+        if (t.includes(String(yyyy))) score += 1;
+        if (venuePart && tClean.replace(/\s/g, "").includes(venuePart)) score += 3;
+        if (cityPart && tClean.includes(cityPart)) score += 2;
+        if (score > bestScore) { bestScore = score; best = row; }
       }
 
-      const chosen = best || events[0];
-      console.log(`  Matched event: ${chosen.href}`);
-      return chosen.href;
+      const chosen = best || rows[0];
+      console.log(`  Best match (score ${bestScore}): ${chosen.href}`);
+      console.log(`  Row text: ${chosen.text.slice(0, 120)}`);
+      console.log(`  Price: $${chosen.price}`);
+      return { price: chosen.price, url: chosen.href };
     } catch (err) {
-      console.log(`  Error for slug "${slug}": ${err.message}`);
+      console.log(`  Error for "${slug}": ${err.message}`);
     }
   }
   return null;
-}
-
-async function scrapeEventPrice(page, eventUrl) {
-  await page.goto(eventUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
-  await page.waitForTimeout(5000);
-
-  return await page.evaluate(() => {
-    const text = document.body.innerText;
-
-    // "Current Get-In Price\n$427\nper ticket"
-    const m = text.match(/Current Get-In Price[\s\S]{0,80}?\$([\d,]+)/i);
-    const price = m ? parseFloat(m[1].replace(/,/g, "")) : null;
-
-    // Grab buy links
-    const links = {};
-    for (const a of document.querySelectorAll("a[href]")) {
-      const href = a.href;
-      const label = (a.textContent || "").toLowerCase();
-      if (!links.ticketmaster && (href.includes("ticketmaster") || label.includes("ticketmaster"))) links.ticketmaster = href;
-      if (!links.vivid && (href.includes("vividseats") || label.includes("vivid"))) links.vivid = href;
-      if (!links.stubhub && (href.includes("stubhub") || label.includes("stubhub"))) links.stubhub = href;
-    }
-    return { price, links };
-  });
 }
 
 async function main() {
@@ -118,30 +111,20 @@ async function main() {
 
     const page = await context.newPage();
     try {
-      const eventUrl = await findEventLink(page, watch);
-      if (!eventUrl) {
-        console.log("  No TicketData page found");
-        await page.screenshot({ path: `debug-${watch.slug}-notfound.png` });
-        await page.close();
-        continue;
-      }
-
-      const { price, links } = await scrapeEventPrice(page, eventUrl);
-      console.log(`  Get-in price: ${price !== null ? "$" + price : "not found"}`);
-      console.log(`  Buy links: ${JSON.stringify(links)}`);
-
-      if (price !== null) {
+      const found = await scrapeFromPerformerPage(page, watch);
+      if (found) {
         results.push({
           timestamp: Date.now(),
           source: "get-in",
           matchSlug: watch.slug,
-          minPrice: price,
-          maxPrice: price,
+          minPrice: found.price,
+          maxPrice: found.price,
           currency: "USD",
-          url: eventUrl,
+          url: found.url,
         });
       } else {
-        await page.screenshot({ path: `debug-${watch.slug}-noprice.png` });
+        console.log("  No price found — saving debug screenshot");
+        await page.screenshot({ path: `debug-${watch.slug}.png` }).catch(() => {});
       }
     } catch (err) {
       console.error(`  Error: ${err.message}`);
