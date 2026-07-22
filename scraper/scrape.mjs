@@ -83,6 +83,22 @@ async function scrapeFromPerformerPage(page, watch) {
   return null;
 }
 
+async function postToWorker(price, failure) {
+  const body = { prices: price ? [price] : [], failures: failure ? [failure] : [] };
+  try {
+    const res = await fetch(`${WORKER_URL}/api/ingest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    console.log("  Worker response:", JSON.stringify(await res.json()));
+  } catch (err) {
+    // Posting is best-effort per event — a network blip here shouldn't
+    // abandon the rest of the run or lose results already scraped.
+    console.error("  Failed to post to worker:", err.message);
+  }
+}
+
 async function main() {
   console.log("Fetching watches from", WORKER_URL);
   const watchesRes = await fetch(`${WORKER_URL}/api/watches`);
@@ -105,8 +121,8 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true });
 
-  const results = [];
-  const failures = [];
+  let succeeded = 0;
+  let failed = 0;
   const MAX_ATTEMPTS = 3;
   const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
@@ -150,7 +166,8 @@ async function main() {
     }
 
     if (found) {
-      results.push({
+      succeeded++;
+      await postToWorker({
         timestamp: Date.now(),
         source: "get-in",
         matchSlug: watch.slug,
@@ -158,10 +175,11 @@ async function main() {
         maxPrice: found.price,
         currency: "USD",
         url: found.url,
-      });
+      }, null);
     } else {
+      failed++;
       if (lastErr) console.error(`  Giving up on ${watch.slug}: ${lastErr.message}`);
-      failures.push({ matchSlug: watch.slug, reason: lastErr ? "error" : "no-price" });
+      await postToWorker(null, { matchSlug: watch.slug, reason: lastErr ? "error" : "no-price" });
     }
 
     // A real gap before the next performer page, on top of the fresh
@@ -173,14 +191,7 @@ async function main() {
   }
 
   await browser.close();
-
-  console.log(`\nPosting ${results.length} price(s), ${failures.length} failure(s) to worker...`);
-  const res = await fetch(`${WORKER_URL}/api/ingest`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prices: results, failures }),
-  });
-  console.log("Worker response:", JSON.stringify(await res.json()));
+  console.log(`\nDone: ${succeeded} succeeded, ${failed} failed, out of ${upcomingWatches.length} event(s).`);
 }
 
 main().catch((err) => {

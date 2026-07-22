@@ -41,7 +41,7 @@ export default {
     await checkNewEvents(env);
   },
 
-  async fetch(request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -72,17 +72,26 @@ export default {
       const priceOrQtyChanged = !!existing && (existing.maxPrice !== body.maxPrice || existing.ticketsWanted !== body.ticketsWanted);
       await addWatch(env, body);
       if ((isNew || priceOrQtyChanged) && env.GITHUB_PAT) {
-        fetch(
-          "https://api.github.com/repos/neetiv/Event-Ticket-Tracker/actions/workflows/scrape-prices.yml/dispatches",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${env.GITHUB_PAT}`,
-              Accept: "application/vnd.github+json",
-              "User-Agent": "Event-Ticket-Tracker/1.0",
-            },
-            body: JSON.stringify({ ref: "main" }),
-          }
+        // Not awaited — but must be handed to waitUntil, or Cloudflare can
+        // cancel it the instant the response below is sent, before GitHub
+        // ever receives the dispatch.
+        ctx.waitUntil(
+          fetch(
+            "https://api.github.com/repos/neetiv/Event-Ticket-Tracker/actions/workflows/scrape-prices.yml/dispatches",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${env.GITHUB_PAT}`,
+                Accept: "application/vnd.github+json",
+                "User-Agent": "Event-Ticket-Tracker/1.0",
+              },
+              body: JSON.stringify({ ref: "main" }),
+            }
+          ).then((res) => {
+            if (!res.ok) console.error(`Scrape dispatch failed: ${res.status}`);
+          }).catch((err) => {
+            console.error(`Scrape dispatch error: ${err.message}`);
+          })
         );
       }
       return json({ ok: true });
