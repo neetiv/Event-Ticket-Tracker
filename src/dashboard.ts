@@ -501,7 +501,7 @@ function renderAccordionChart(idx) {
     datasets.unshift({
       label:'Target ($'+event.maxPrice+')',
       data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
-      borderColor:'#f0c0cf',backgroundColor:'#f0c0cf26',
+      borderColor:'#7a4d9e',backgroundColor:'#7a4d9e26',
       borderWidth:2,borderDash:[6,4],pointRadius:0,fill:'origin',
     });
   }
@@ -600,7 +600,7 @@ function renderChart(event) {
     datasets.unshift({
       label:'Target ($'+event.maxPrice+')',
       data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
-      borderColor:'#f0c0cf',backgroundColor:'#f0c0cf26',
+      borderColor:'#7a4d9e',backgroundColor:'#7a4d9e26',
       borderWidth:2,borderDash:[6,4],pointRadius:0,fill:'origin',
     });
   }
