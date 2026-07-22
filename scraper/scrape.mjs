@@ -101,6 +101,7 @@ async function main() {
   });
 
   const results = [];
+  const MAX_ATTEMPTS = 3;
 
   for (const watch of watches) {
     if (new Date(watch.date) < new Date()) {
@@ -109,28 +110,51 @@ async function main() {
     }
     console.log(`\nProcessing: ${watch.name}`);
 
-    const page = await context.newPage();
-    try {
-      const found = await scrapeFromPerformerPage(page, watch);
-      if (found) {
-        results.push({
-          timestamp: Date.now(),
-          source: "get-in",
-          matchSlug: watch.slug,
-          minPrice: found.price,
-          maxPrice: found.price,
-          currency: "USD",
-          url: found.url,
-        });
-      } else {
-        console.log("  No price found — saving debug screenshot");
-        await page.screenshot({ path: `debug-${watch.slug}.png` }).catch(() => {});
+    let found = null;
+    let lastErr = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1) {
+        const backoffMs = 5000 * (attempt - 1);
+        console.log(`  Retry ${attempt}/${MAX_ATTEMPTS} in ${backoffMs / 1000}s (likely a Cloudflare bot check)...`);
+        await new Promise((r) => setTimeout(r, backoffMs));
       }
-    } catch (err) {
-      console.error(`  Error: ${err.message}`);
-      await page.screenshot({ path: `debug-${watch.slug}-error.png` }).catch(() => {});
+      // Fresh page each attempt — a clean session gives the Cloudflare
+      // challenge another chance to resolve instead of reusing a flagged one.
+      const page = await context.newPage();
+      try {
+        found = await scrapeFromPerformerPage(page, watch);
+        lastErr = null;
+        if (found) {
+          await page.close();
+          break;
+        }
+        if (attempt === MAX_ATTEMPTS) {
+          console.log("  No price found after retries — saving debug screenshot");
+          await page.screenshot({ path: `debug-${watch.slug}.png` }).catch(() => {});
+        }
+      } catch (err) {
+        lastErr = err;
+        console.error(`  Error (attempt ${attempt}/${MAX_ATTEMPTS}): ${err.message}`);
+        if (attempt === MAX_ATTEMPTS) {
+          await page.screenshot({ path: `debug-${watch.slug}-error.png` }).catch(() => {});
+        }
+      }
+      await page.close();
     }
-    await page.close();
+
+    if (found) {
+      results.push({
+        timestamp: Date.now(),
+        source: "get-in",
+        matchSlug: watch.slug,
+        minPrice: found.price,
+        maxPrice: found.price,
+        currency: "USD",
+        url: found.url,
+      });
+    } else if (lastErr) {
+      console.error(`  Giving up on ${watch.slug}: ${lastErr.message}`);
+    }
   }
 
   await browser.close();

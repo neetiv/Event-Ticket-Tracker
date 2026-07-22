@@ -1,8 +1,8 @@
 import { Env, PriceSnapshot } from "./types";
 import { getWatches, getLatestPrice, getLastCheck, getPriceHistory, getSettings } from "./storage";
 
-const SOURCES = ["get-in", "ticketmaster"];
-const SOURCE_LABELS: Record<string, string> = { "get-in": "Resale Get-In", "ticketmaster": "Ticketmaster" };
+const SOURCES = ["get-in"];
+const SOURCE_LABELS: Record<string, string> = { "get-in": "Resale Get-In" };
 
 export async function renderDashboard(env: Env): Promise<Response> {
   const watches = await getWatches(env);
@@ -295,6 +295,7 @@ function renderTrackedView(container) {
   }
 
   let html = '<h2>&#127800; Your Tracked Events</h2>';
+  const si = SETTINGS.scrapeIntervalMinutes || 60;
   WATCHES.forEach((event, idx) => {
     const d = new Date(event.date);
     const isPast = d < new Date();
@@ -332,13 +333,11 @@ function renderTrackedView(container) {
         if (latest.maxPrice && latest.maxPrice !== latest.minPrice) sub = 'Range: $'+latest.minPrice+' – $'+latest.maxPrice;
       }
       const chk = data.lastCheck ? timeAgo(new Date(data.lastCheck)) : 'never';
-      const buyUrl = latest?.url || (source === 'ticketmaster' ? event.url : null);
+      const buyUrl = latest?.url;
       const link = buyUrl ? ' &middot; <a href="'+buyUrl+'" target="_blank">Buy tickets</a>' : '';
-      const note = source === 'ticketmaster' && (!latest || latest.minPrice === null)
-        ? '<div class="card-sub" style="color:#b6a0c8">Primary market — often sold out for popular events</div>' : '';
       cardsHtml += '<div class="card"><div class="card-label">'+label+'</div><div class="card-value '+cls+'">'+val+'</div>'+
         (sub?'<div class="card-sub">'+sub+'</div>':'')+
-        '<div class="card-sub">Checked '+chk+link+'</div>'+note+'</div>';
+        '<div class="card-sub">Checked '+chk+link+'</div></div>';
     }
 
     html += '<div class="accordion">'+
@@ -349,10 +348,21 @@ function renderTrackedView(container) {
         '<span class="accordion-arrow" id="arrow-'+idx+'">&#9660;</span>'+
       '</div>'+
       '<div class="accordion-body" id="body-'+idx+'">'+
-        '<div style="margin-bottom:10px;display:flex;gap:6px;align-items:center">'+
+        '<div style="margin-bottom:10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">'+
           (event.url?'<a href="'+event.url+'" target="_blank" class="btn btn-pink btn-sm">Buy Tickets</a>':'')+
           '<button class="btn btn-primary btn-sm trigger-scrape">&#127804; Scrape Prices</button>'+
           '<span class="scrape-status" style="font-size:.75rem;color:#8a7699"></span>'+
+          '<span style="margin-left:auto;display:flex;align-items:center;gap:6px">'+
+            '<label style="font-size:.72rem;color:#8a7699;text-transform:uppercase;letter-spacing:.04em">Scrape every</label>'+
+            '<select class="scrape-interval" style="width:auto;padding:5px 8px;font-size:.75rem">'+
+              '<option value="15"'+(si===15?' selected':'')+'>15 min</option>'+
+              '<option value="30"'+(si===30?' selected':'')+'>30 min</option>'+
+              '<option value="60"'+(si===60?' selected':'')+'>1 hr</option>'+
+              '<option value="120"'+(si===120?' selected':'')+'>2 hrs</option>'+
+              '<option value="240"'+(si===240?' selected':'')+'>4 hrs</option>'+
+              '<option value="360"'+(si===360?' selected':'')+'>6 hrs</option>'+
+            '</select>'+
+          '</span>'+
         '</div>'+
         '<div class="cards">'+cardsHtml+'</div>'+
         '<div class="chart-box"><canvas id="chart-'+idx+'"></canvas></div>'+
@@ -436,6 +446,17 @@ function renderTrackedView(container) {
       location.reload();
     });
   });
+
+  // Scrape interval (global setting, editable from any card)
+  container.querySelectorAll('.scrape-interval').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const minutes = parseInt(sel.value);
+      const s = Object.assign({}, SETTINGS, {scrapeIntervalMinutes: minutes});
+      await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(s)});
+      SETTINGS.scrapeIntervalMinutes = minutes;
+      container.querySelectorAll('.scrape-interval').forEach(other => { other.value = String(minutes); });
+    });
+  });
 }
 
 function renderAccordionChart(idx) {
@@ -444,7 +465,7 @@ function renderAccordionChart(idx) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const datasets = [];
-  const colors = {'get-in':'#7c4daf','ticketmaster':'#026CDF'};
+  const colors = {'get-in':'#ff94d8'};
   for (const [source, data] of Object.entries(event.sources || {})) {
     if (!data.history || data.history.length === 0) continue;
     datasets.push({
@@ -539,7 +560,7 @@ function renderChart(event) {
   const ctx = document.getElementById('priceChart').getContext('2d');
   if (chart) chart.destroy();
   const datasets = [];
-  const colors = {'get-in':'#7c4daf','ticketmaster':'#026CDF'};
+  const colors = {'get-in':'#ff94d8'};
   for (const [source, data] of Object.entries(event.sources)) {
     if (data.history.length === 0) continue;
     datasets.push({
@@ -587,7 +608,7 @@ function renderSettingsView(container) {
           '<option value="240"'+(si===240?' selected':'')+'>Every 4 hours</option>'+
           '<option value="360"'+(si===360?' selected':'')+'>Every 6 hours</option>'+
         '</select>'+
-        '<div class="card-sub" style="margin-top:4px">GitHub Actions checks every 15 min and skips if it\'s not time yet. Increase frequency as event date gets closer.</div></div>'+
+        '<div class="card-sub" style="margin-top:4px">GitHub Actions checks every 15 min and skips runs that are not due yet. Increase frequency as event date gets closer.</div></div>'+
       '<div id="ntfySettings"'+(curMethod==='sms'?' class="hidden"':'')+'>'+
         '<div class="form-group" style="margin-bottom:10px"><label>ntfy Topic</label><input type="text" id="sNtfy" value="'+(SETTINGS.ntfyTopic||'')+'" placeholder="my-ticket-alerts">'+
           '<div class="card-sub" style="margin-top:4px">Install <a href="https://ntfy.sh" target="_blank">ntfy app</a> and subscribe to this topic.</div></div></div>'+

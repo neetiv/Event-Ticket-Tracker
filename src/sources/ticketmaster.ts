@@ -1,5 +1,3 @@
-import { WatchedEvent, PriceSnapshot } from "../types";
-
 const BASE_URL = "https://app.ticketmaster.com/discovery/v2/events";
 
 const CITY_COORDS: Record<string, string> = {
@@ -131,40 +129,4 @@ export async function searchEvents(
       info: e.info || e.pleaseNote || e.description || null,
     };
   });
-}
-
-export async function fetchEventPrice(
-  event: WatchedEvent,
-  apiKey: string
-): Promise<PriceSnapshot> {
-  if (!event.ticketmasterEventId) return emptySnapshot(event);
-
-  const url = `${BASE_URL}/${event.ticketmasterEventId}.json?apikey=${apiKey}`;
-  const res = await fetch(url);
-  if (!res.ok) return emptySnapshot(event);
-
-  const data: any = await res.json();
-  const ranges = data.priceRanges;
-
-  return {
-    timestamp: Date.now(),
-    source: "ticketmaster",
-    matchSlug: event.slug,
-    minPrice: ranges?.length > 0 ? Math.min(...ranges.map((r: any) => r.min)) : null,
-    maxPrice: ranges?.length > 0 ? Math.max(...ranges.map((r: any) => r.max)) : null,
-    currency: ranges?.[0]?.currency || "USD",
-    url: data.url || event.url,
-  };
-}
-
-function emptySnapshot(event: WatchedEvent): PriceSnapshot {
-  return {
-    timestamp: Date.now(),
-    source: "ticketmaster",
-    matchSlug: event.slug,
-    minPrice: null,
-    maxPrice: null,
-    currency: "USD",
-    url: "",
-  };
 }

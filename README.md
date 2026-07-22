@@ -2,16 +2,16 @@
 
 **Live dashboard:** https://event-ticket-tracker.neeti-tickets.workers.dev
 
-Cloudflare Worker that tracks ticket prices across Ticketmaster and resale markets, stores price history, and sends push notifications when prices drop below your target.
+Cloudflare Worker that tracks resale ticket prices, stores price history, and sends push notifications when prices drop below your target. Uses the Ticketmaster Discovery API to search for and track events.
 
 ## Features
 
 - Search and track any event on Ticketmaster
-- Monitors both official (Ticketmaster) and resale get-in prices
+- Monitors resale get-in prices via a Playwright scraper
 - Price history charts per event
 - Alerts via ntfy.sh push notifications or SMS
 - City-level watch for newly announced events
-- Cron-triggered price checks every 15 minutes
+- Cron-triggered resale scrape, interval configurable from the dashboard
 
 ## Setup
 
@@ -70,7 +70,6 @@ Resale "get-in" prices are fetched by a Playwright scraper that runs via GitHub 
 | `POST` | `/api/settings` | Save alert settings |
 | `POST` | `/api/ingest` | Ingest price snapshots (used by scraper) |
 | `POST` | `/api/scrape` | Trigger the GitHub Actions scraper |
-| `POST` | `/api/check` | Manually trigger a price check |
 | `GET` | `/api/status` | Health check |
 
 ## Local development
@@ -82,6 +81,6 @@ Opens `http://localhost:8787`.
 ## Architecture
 - **Runtime:** Cloudflare Workers (TypeScript)
 - **Storage:** Cloudflare KV — price history, watched events, settings
-- **Price sources:** Ticketmaster Discovery API + Playwright scraper (ticketdata.com)
+- **Price source:** Playwright scraper (ticketdata.com) for resale get-in prices; Ticketmaster Discovery API is used only for event search/tracking, not price polling
 - **Alerts:** ntfy.sh push notifications and/or SMS carrier gateway
 - **Dashboard:** Server-rendered HTML + Chart.js, no separate static hosting needed
