@@ -21,7 +21,7 @@ Loaded via Google Fonts ([src/dashboard.ts:51](src/dashboard.ts#L51)).
 | `#8a5fa0` | Primary hover state | `.tab.active:hover`, `.btn-primary:hover` |
 | `#7a5694` | Link hover | `a:hover`, `.si-genre` text |
 | `#8a7699` | Secondary/muted text — labels, subtitles, timestamps | `.subtitle`, `.card-label`, `.card-sub`, `.tab`, `.form-group label`, `.si-detail`, chart axis ticks & legend |
-| `#7a4d9e` | Chart target-line color; hero title gradient start | Target line `borderColor` ([src/dashboard.ts:504](src/dashboard.ts#L504), [:603](src/dashboard.ts#L603)), `.hero h1 .grad` gradient |
+| `#7a4d9e` | Resale Get-In chart line; hero title gradient start | chart `colors['get-in']`, `.hero h1 .grad` gradient |
 | `#a090b8` | Past/expired event title (deemphasized) | past-event accordion title |
 | `#c47a9e` | Hero title gradient end | `.hero h1 .grad` |
 
@@ -29,7 +29,7 @@ Loaded via Google Fonts ([src/dashboard.ts:51](src/dashboard.ts#L51)).
 
 | Hex | Role | Used in |
 |---|---|---|
-| `#ff94d8` | Bright accent — "Buy Tickets" button, Resale Get-In chart line | `.btn-pink`, chart `colors['get-in']` |
+| `#ff94d8` | Bright accent — "Buy Tickets" button, target-line chart color | `.btn-pink`, target line `borderColor` ([src/dashboard.ts:504](src/dashboard.ts#L504), [:603](src/dashboard.ts#L603)) |
 | `#f07cc4` | Pink hover | `.btn-pink:hover` |
 | `#f5d5e0` | Danger button background | `.btn-danger` |
 | `#f0c0cf` | Danger button hover | `.btn-danger:hover` |
@@ -64,8 +64,8 @@ Thresholds relative to max price, see [src/dashboard.ts:333](src/dashboard.ts#L3
 
 | Hex | Role |
 |---|---|
-| `#ff94d8` | Resale Get-In price line + its own fill (`+'20'` alpha suffix) |
-| `#7a4d9e` | Target line, dashed, with `#7a4d9e26` shaded fill down to the x-axis |
+| `#7a4d9e` | Resale Get-In price line + its own fill (`+'20'` alpha suffix) |
+| `#ff94d8` | Target line, dashed, with `#ff94d826` shaded fill down to the x-axis |
 | `#efe6f5` | Axis gridlines |
 | `#8a7699` | Axis ticks, legend labels |
 | `#c9a88c` | Fallback line color in the unused legacy `renderChart()` function — inconsistent with the live chart's `#9b72b0` fallback; noted here rather than fixed since that function isn't currently reachable from the UI |

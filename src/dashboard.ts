@@ -484,7 +484,7 @@ function renderAccordionChart(idx) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const datasets = [];
-  const colors = {'get-in':'#ff94d8'};
+  const colors = {'get-in':'#7a4d9e'};
   for (const [source, data] of Object.entries(event.sources || {})) {
     if (!data.history || data.history.length === 0) continue;
     datasets.push({
@@ -501,7 +501,7 @@ function renderAccordionChart(idx) {
     datasets.unshift({
       label:'Target ($'+event.maxPrice+')',
       data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
-      borderColor:'#7a4d9e',backgroundColor:'#7a4d9e26',
+      borderColor:'#ff94d8',backgroundColor:'#ff94d826',
       borderWidth:2,borderDash:[6,4],pointRadius:0,fill:'origin',
     });
   }
@@ -586,7 +586,7 @@ function renderChart(event) {
   const ctx = document.getElementById('priceChart').getContext('2d');
   if (chart) chart.destroy();
   const datasets = [];
-  const colors = {'get-in':'#ff94d8'};
+  const colors = {'get-in':'#7a4d9e'};
   for (const [source, data] of Object.entries(event.sources)) {
     if (data.history.length === 0) continue;
     datasets.push({
@@ -600,7 +600,7 @@ function renderChart(event) {
     datasets.unshift({
       label:'Target ($'+event.maxPrice+')',
       data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
-      borderColor:'#7a4d9e',backgroundColor:'#7a4d9e26',
+      borderColor:'#ff94d8',backgroundColor:'#ff94d826',
       borderWidth:2,borderDash:[6,4],pointRadius:0,fill:'origin',
     });
   }
