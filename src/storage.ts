@@ -79,6 +79,19 @@ export async function setLastAlertTime(env: Env, slug: string, key: string): Pro
   await env.PRICE_DATA.put(`meta:lastAlert:${slug}:${key}`, new Date().toISOString(), { expirationTtl: TTL_SECONDS });
 }
 
+export async function getScrapeBlocked(env: Env, slug: string): Promise<boolean> {
+  const val = await env.PRICE_DATA.get(`meta:scrapeBlocked:${slug}`);
+  return val === "true";
+}
+
+export async function setScrapeBlocked(env: Env, slug: string, blocked: boolean): Promise<void> {
+  if (blocked) {
+    await env.PRICE_DATA.put(`meta:scrapeBlocked:${slug}`, "true", { expirationTtl: TTL_SECONDS });
+  } else {
+    await env.PRICE_DATA.delete(`meta:scrapeBlocked:${slug}`);
+  }
+}
+
 export async function getLastScrapeTime(env: Env): Promise<number | null> {
   const val = await env.PRICE_DATA.get("meta:lastScrape");
   return val ? parseInt(val) : null;

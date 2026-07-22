@@ -94,20 +94,24 @@ async function main() {
   }
   console.log(`Found ${watches.length} watched event(s)`);
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    viewport: { width: 1280, height: 800 },
+  const now = new Date();
+  const upcomingWatches = watches.filter((w) => {
+    if (new Date(w.date) < now) {
+      console.log(`Skipping ${w.slug} — already passed`);
+      return false;
+    }
+    return true;
   });
 
-  const results = [];
-  const MAX_ATTEMPTS = 3;
+  const browser = await chromium.launch({ headless: true });
 
-  for (const watch of watches) {
-    if (new Date(watch.date) < new Date()) {
-      console.log(`Skipping ${watch.slug} — already passed`);
-      continue;
-    }
+  const results = [];
+  const failures = [];
+  const MAX_ATTEMPTS = 3;
+  const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+  for (let i = 0; i < upcomingWatches.length; i++) {
+    const watch = upcomingWatches[i];
     console.log(`\nProcessing: ${watch.name}`);
 
     let found = null;
@@ -118,14 +122,17 @@ async function main() {
         console.log(`  Retry ${attempt}/${MAX_ATTEMPTS} in ${backoffMs / 1000}s (likely a Cloudflare bot check)...`);
         await new Promise((r) => setTimeout(r, backoffMs));
       }
-      // Fresh page each attempt — a clean session gives the Cloudflare
-      // challenge another chance to resolve instead of reusing a flagged one.
+      // Fresh, isolated browser context per attempt (not just a fresh page).
+      // ticketdata.com's Cloudflare protection lets the first page visited in
+      // a session through cleanly but challenges follow-up pages hit
+      // back-to-back in the same session — a new context resets that state.
+      const context = await browser.newContext({ userAgent: UA, viewport: { width: 1280, height: 800 } });
       const page = await context.newPage();
       try {
         found = await scrapeFromPerformerPage(page, watch);
         lastErr = null;
         if (found) {
-          await page.close();
+          await context.close();
           break;
         }
         if (attempt === MAX_ATTEMPTS) {
@@ -139,7 +146,7 @@ async function main() {
           await page.screenshot({ path: `debug-${watch.slug}-error.png` }).catch(() => {});
         }
       }
-      await page.close();
+      await context.close();
     }
 
     if (found) {
@@ -152,18 +159,26 @@ async function main() {
         currency: "USD",
         url: found.url,
       });
-    } else if (lastErr) {
-      console.error(`  Giving up on ${watch.slug}: ${lastErr.message}`);
+    } else {
+      if (lastErr) console.error(`  Giving up on ${watch.slug}: ${lastErr.message}`);
+      failures.push({ matchSlug: watch.slug, reason: lastErr ? "error" : "no-price" });
+    }
+
+    // A real gap before the next performer page, on top of the fresh
+    // context — back-to-back visits with no pause still read as automated.
+    if (i < upcomingWatches.length - 1) {
+      console.log("  Waiting 10s before next event...");
+      await new Promise((r) => setTimeout(r, 10000));
     }
   }
 
   await browser.close();
 
-  console.log(`\nPosting ${results.length} price(s) to worker...`);
+  console.log(`\nPosting ${results.length} price(s), ${failures.length} failure(s) to worker...`);
   const res = await fetch(`${WORKER_URL}/api/ingest`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prices: results }),
+    body: JSON.stringify({ prices: results, failures }),
   });
   console.log("Worker response:", JSON.stringify(await res.json()));
 }

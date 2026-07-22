@@ -1,7 +1,7 @@
 import { Env, WatchedEvent } from "./types";
 import { searchEvents } from "./sources/ticketmaster";
-import { savePrice, getWatches, addWatch, removeWatch, getSettings, saveSettings, getLastScrapeTime, setLastScrapeTime } from "./storage";
-import { checkAndAlert, notifyNewEvents } from "./alerts";
+import { savePrice, getWatches, addWatch, removeWatch, getSettings, saveSettings, getLastScrapeTime, setLastScrapeTime, getScrapeBlocked, setScrapeBlocked } from "./storage";
+import { checkAndAlert, notifyNewEvents, notifyScrapeIssue } from "./alerts";
 import { renderDashboard, handleApiPrices } from "./dashboard";
 import BG_BASE64 from "./bg";
 
@@ -97,12 +97,26 @@ export default {
     if (path === "/api/ingest" && request.method === "POST") {
       const body = await request.json() as any;
       const watches = await getWatches(env);
+      const settings = await getSettings(env);
       let saved = 0;
       for (const snap of body.prices || []) {
         await savePrice(env, snap);
         const w = watches.find((e) => e.slug === snap.matchSlug);
-        if (w) await checkAndAlert(env, w, snap);
+        if (w) {
+          await checkAndAlert(env, w, snap);
+          if (await getScrapeBlocked(env, w.slug)) {
+            await setScrapeBlocked(env, w.slug, false);
+            await notifyScrapeIssue(env, settings, w, true);
+          }
+        }
         saved++;
+      }
+      for (const fail of body.failures || []) {
+        const w = watches.find((e) => e.slug === fail.matchSlug);
+        if (w && !(await getScrapeBlocked(env, w.slug))) {
+          await setScrapeBlocked(env, w.slug, true);
+          await notifyScrapeIssue(env, settings, w, false);
+        }
       }
       await setLastScrapeTime(env);
       return json({ ok: true, saved });

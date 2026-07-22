@@ -1,5 +1,5 @@
 import { Env, PriceSnapshot } from "./types";
-import { getWatches, getLatestPrice, getLastCheck, getPriceHistory, getSettings } from "./storage";
+import { getWatches, getLatestPrice, getLastCheck, getPriceHistory, getSettings, getScrapeBlocked } from "./storage";
 
 const SOURCES = ["get-in"];
 const SOURCE_LABELS: Record<string, string> = { "get-in": "Resale Get-In" };
@@ -21,7 +21,8 @@ export async function renderDashboard(env: Env): Promise<Response> {
           sources[source] = { latest, lastCheck, history };
         })
       );
-      return { ...event, sources };
+      const scrapeBlocked = await getScrapeBlocked(env, event.slug);
+      return { ...event, sources, scrapeBlocked };
     })
   );
 
@@ -364,6 +365,7 @@ function renderTrackedView(container) {
             '</select>'+
           '</span>'+
         '</div>'+
+        (event.scrapeBlocked?'<div class="card-sub" style="color:#c45c6e;margin-bottom:8px">&#9888;&#65039; Resale scraper is currently blocked by the source site’s bot check &mdash; we’ll notify you when it recovers.</div>':'')+
         '<div class="cards">'+cardsHtml+'</div>'+
         '<div class="chart-box"><canvas id="chart-'+idx+'"></canvas></div>'+
         '<div class="panel">'+

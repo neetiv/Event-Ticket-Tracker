@@ -92,6 +92,35 @@ export async function notifyNewEvents(
   console.log(`New events alert: ${city}/${category} — ${events.length} events`);
 }
 
+export async function notifyScrapeIssue(
+  env: Env,
+  settings: UserSettings,
+  event: WatchedEvent,
+  recovered: boolean
+): Promise<void> {
+  const title = recovered
+    ? `${event.name} — resale scraping is back`
+    : `${event.name} — resale scraping is stuck`;
+  const body = recovered
+    ? "We're able to fetch resale get-in prices again."
+    : "We couldn't get a resale get-in price for this event, likely blocked by the source site's bot check. You won't get another alert about this until it recovers.";
+
+  if (env.DRY_RUN === "true") {
+    console.log(`[DRY RUN] Scrape status: ${title}\n${body}`);
+    return;
+  }
+
+  const method = settings.alertMethod || "ntfy";
+  await Promise.all([
+    (method === "ntfy" || method === "both") && settings.ntfyTopic
+      ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, event.url, "default")
+      : Promise.resolve(),
+    (method === "sms" || method === "both") && settings.smsGatewayEmail
+      ? sendSms(settings.smsGatewayEmail, title, event.url)
+      : Promise.resolve(),
+  ]);
+}
+
 async function sendNtfy(topic: string, token: string | undefined, title: string, body: string, url: string, priority: string): Promise<void> {
   const headers: Record<string, string> = {
     Title: title,
