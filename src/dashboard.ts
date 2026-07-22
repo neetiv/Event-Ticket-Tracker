@@ -495,10 +495,14 @@ function renderAccordionChart(idx) {
     });
   }
   if (event.alertsEnabled && datasets.length > 0) {
-    datasets.push({
+    // Unshifted so it draws first — the price line's own fill then renders
+    // on top of it, making the overlap between "under target" and "actual
+    // price" visually obvious instead of two separate flat lines.
+    datasets.unshift({
       label:'Target ($'+event.maxPrice+')',
       data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
-      borderColor:'#f0c0cf',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,
+      borderColor:'#f0c0cf',backgroundColor:'#f0c0cf26',
+      borderWidth:2,borderDash:[6,4],pointRadius:0,fill:'origin',
     });
   }
   new Chart(ctx,{
@@ -507,7 +511,10 @@ function renderAccordionChart(idx) {
       responsive:true,interaction:{mode:'index',intersect:false},
       scales:{
         x:{type:'time',time:{tooltipFormat:'MMM d, h:mm a'},grid:{color:'#efe6f5'},ticks:{color:'#8a7699'}},
-        y:{beginAtZero:false,grid:{color:'#efe6f5'},ticks:{color:'#8a7699',callback:v=>'$'+v}},
+        // Anchored at 0 so the scale reads as an honest proportion instead
+        // of stretching whatever range the data happens to span — $150 vs
+        // $100 shouldn't fill the whole chart height.
+        y:{beginAtZero:true,grid:{color:'#efe6f5'},ticks:{color:'#8a7699',callback:v=>'$'+v}},
       },
       plugins:{legend:{labels:{color:'#8a7699'}},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.y}}},
     },
@@ -590,10 +597,11 @@ function renderChart(event) {
     });
   }
   if (event.alertsEnabled && datasets.length > 0) {
-    datasets.push({
+    datasets.unshift({
       label:'Target ($'+event.maxPrice+')',
       data:[{x:datasets[0].data[0]?.x||Date.now(),y:event.maxPrice},{x:Date.now(),y:event.maxPrice}],
-      borderColor:'#f0c0cf',borderWidth:2,borderDash:[6,4],pointRadius:0,fill:false,
+      borderColor:'#f0c0cf',backgroundColor:'#f0c0cf26',
+      borderWidth:2,borderDash:[6,4],pointRadius:0,fill:'origin',
     });
   }
   chart = new Chart(ctx,{
@@ -602,7 +610,7 @@ function renderChart(event) {
       responsive:true,interaction:{mode:'index',intersect:false},
       scales:{
         x:{type:'time',time:{tooltipFormat:'MMM d, h:mm a'},grid:{color:'#efe6f5'},ticks:{color:'#8a7699'}},
-        y:{beginAtZero:false,grid:{color:'#efe6f5'},ticks:{color:'#8a7699',callback:v=>'$'+v}},
+        y:{beginAtZero:true,grid:{color:'#efe6f5'},ticks:{color:'#8a7699',callback:v=>'$'+v}},
       },
       plugins:{legend:{labels:{color:'#8a7699'}},tooltip:{callbacks:{label:c=>c.dataset.label+': $'+c.parsed.y}}},
     },
