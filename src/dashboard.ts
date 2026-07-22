@@ -69,7 +69,7 @@ function buildHtml(watchData: any[], settings: any): string {
     .card:hover{box-shadow:0 4px 16px rgba(90,61,122,.08)}
     .card-label{font-size:.7rem;color:#8a7699;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
     .card-value{font-size:1.6rem;font-weight:700;color:#3a2d4f}
-    .card-value.green{color:#6a9e6f}.card-value.amber{color:#c9a050}.card-value.red{color:#c45c6e}.card-value.na{color:#c4b5cc;font-size:1.1rem}
+    .card-value.green{color:#6a9e6f}.card-value.amber{color:#c9a050}.card-value.auburn{color:#b8674a}.card-value.red{color:#a13d4c}.card-value.na{color:#c4b5cc;font-size:1.1rem}
     .card-sub{font-size:.72rem;color:#8a7699;margin-top:3px}
     .chart-box{background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border:1px solid #e6dced;border-radius:14px;padding:14px;margin-bottom:16px}
     canvas{max-height:300px}
@@ -329,7 +329,7 @@ function renderTrackedView(container) {
       let cls='na', val='No data yet', sub='';
       if (latest && latest.minPrice !== null) {
         const p = latest.minPrice;
-        cls = p <= event.maxPrice * 0.85 ? 'green' : p <= event.maxPrice ? 'amber' : 'red';
+        cls = p <= event.maxPrice * 0.85 ? 'green' : p <= event.maxPrice ? 'amber' : p <= event.maxPrice * 1.15 ? 'auburn' : 'red';
         val = '$'+p;
         if (latest.maxPrice && latest.maxPrice !== latest.minPrice) sub = 'Range: $'+latest.minPrice+' – $'+latest.maxPrice;
       }
@@ -513,7 +513,7 @@ function renderEventView(container, event) {
     let cls='na', val='No data yet', sub='';
     if (latest && latest.minPrice !== null) {
       const p = latest.minPrice;
-      cls = p <= event.maxPrice * 0.85 ? 'green' : p <= event.maxPrice ? 'amber' : 'red';
+      cls = p <= event.maxPrice * 0.85 ? 'green' : p <= event.maxPrice ? 'amber' : p <= event.maxPrice * 1.15 ? 'auburn' : 'red';
       val = '$'+p;
       if (latest.maxPrice && latest.maxPrice !== latest.minPrice) sub = 'Range: $'+latest.minPrice+' – $'+latest.maxPrice;
     }
