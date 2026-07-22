@@ -198,6 +198,7 @@ function renderSearchView(container) {
 
   document.getElementById('searchBtn').addEventListener('click', doSearch);
   document.getElementById('searchQ').addEventListener('keydown', e => { if (e.key==='Enter') doSearch(); });
+  document.getElementById('searchCity').addEventListener('keydown', e => { if (e.key==='Enter') doSearch(); });
 }
 
 async function doSearch() {
