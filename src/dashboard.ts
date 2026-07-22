@@ -621,11 +621,23 @@ function renderChart(event) {
 function renderSettingsView(container) {
   const curMethod = SETTINGS.alertMethod || 'ntfy';
   const si = SETTINGS.scrapeIntervalMinutes || 60;
+  const ac = SETTINGS.alertCooldownMinutes || 0;
   container.innerHTML =
     '<h2>&#127800; Notification Settings</h2>'+
     '<div class="panel">'+
       '<div class="form-group" style="margin-bottom:12px"><label>Alert Method</label>'+
         '<select id="sMethod"><option value="ntfy"'+(curMethod==='ntfy'?' selected':'')+'>ntfy (push notifications)</option><option value="sms"'+(curMethod==='sms'?' selected':'')+'>SMS (text messages)</option><option value="both"'+(curMethod==='both'?' selected':'')+'>Both</option></select></div>'+
+      '<div class="form-group" style="margin-bottom:12px"><label>Alert Cooldown</label>'+
+        '<select id="sAlertCooldown">'+
+          '<option value="0"'+(ac===0?' selected':'')+'>Every time (no cooldown)</option>'+
+          '<option value="15"'+(ac===15?' selected':'')+'>15 minutes</option>'+
+          '<option value="30"'+(ac===30?' selected':'')+'>30 minutes</option>'+
+          '<option value="60"'+(ac===60?' selected':'')+'>1 hour</option>'+
+          '<option value="120"'+(ac===120?' selected':'')+'>2 hours</option>'+
+          '<option value="360"'+(ac===360?' selected':'')+'>6 hours</option>'+
+          '<option value="1440"'+(ac===1440?' selected':'')+'>24 hours</option>'+
+        '</select>'+
+        '<div class="card-sub" style="margin-top:4px">How long to wait before re-alerting on the same event+source while it stays under target. Manually clicking Scrape Prices always notifies regardless of cooldown.</div></div>'+
       '<div class="form-group" style="margin-bottom:12px"><label>Resale Scrape Interval</label>'+
         '<select id="sScrapeInterval">'+
           '<option value="15"'+(si===15?' selected':'')+'>Every 15 minutes</option>'+
@@ -728,7 +740,7 @@ function renderSettingsView(container) {
   });
   document.getElementById('saveSettings').addEventListener('click', async () => {
     const method = document.getElementById('sMethod').value;
-    const s = {alertMethod:method, ntfyTopic:document.getElementById('sNtfy').value.trim(), smsGatewayEmail:document.getElementById('sSms').value.trim()||undefined, cityWatches, scrapeIntervalMinutes:parseInt(document.getElementById('sScrapeInterval').value)};
+    const s = {alertMethod:method, ntfyTopic:document.getElementById('sNtfy').value.trim(), smsGatewayEmail:document.getElementById('sSms').value.trim()||undefined, cityWatches, scrapeIntervalMinutes:parseInt(document.getElementById('sScrapeInterval').value), alertCooldownMinutes:parseInt(document.getElementById('sAlertCooldown').value)};
     await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)});
     alert('Settings saved!');
   });

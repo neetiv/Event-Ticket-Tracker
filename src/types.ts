@@ -33,6 +33,7 @@ export interface UserSettings {
   smsGatewayEmail?: string;
   cityWatches?: CityWatch[];
   scrapeIntervalMinutes?: number;
+  alertCooldownMinutes?: number;
 }
 
 export interface Env {

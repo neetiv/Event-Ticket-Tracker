@@ -109,12 +109,13 @@ export default {
       const body = await request.json() as any;
       const watches = await getWatches(env);
       const settings = await getSettings(env);
+      const bypassCooldown = !!body.manual;
       let saved = 0;
       for (const snap of body.prices || []) {
         await savePrice(env, snap);
         const w = watches.find((e) => e.slug === snap.matchSlug);
         if (w) {
-          await checkAndAlert(env, w, snap);
+          await checkAndAlert(env, w, snap, bypassCooldown);
           if (await getScrapeBlocked(env, w.slug)) {
             await setScrapeBlocked(env, w.slug, false);
             await notifyScrapeIssue(env, settings, w, true);

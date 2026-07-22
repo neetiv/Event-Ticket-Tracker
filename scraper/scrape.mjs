@@ -6,6 +6,11 @@ if (!WORKER_URL) {
   process.exit(1);
 }
 
+// Cron runs are the only ones that should respect the alert cooldown —
+// anything else (button click, auto-triggered by tracking/editing a watch)
+// is the user actively engaging right now and should always notify.
+const IS_MANUAL = process.env.TRIGGER_EVENT !== "schedule";
+
 // "Ariana Grande - The Eternal Sunshine Tour" → "ariana-grande"
 function toPerformerSlug(name) {
   const base = name.split(/\s*[-–:]\s*/)[0].trim();
@@ -84,7 +89,7 @@ async function scrapeFromPerformerPage(page, watch) {
 }
 
 async function postToWorker(price, failure) {
-  const body = { prices: price ? [price] : [], failures: failure ? [failure] : [] };
+  const body = { prices: price ? [price] : [], failures: failure ? [failure] : [], manual: IS_MANUAL };
   try {
     const res = await fetch(`${WORKER_URL}/api/ingest`, {
       method: "POST",

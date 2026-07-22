@@ -1,11 +1,11 @@
 import { Env, WatchedEvent, PriceSnapshot, UserSettings } from "./types";
-import { ALERT_COOLDOWN_MS } from "./config";
 import { getLastAlertTime, setLastAlertTime, getSettings } from "./storage";
 
 export async function checkAndAlert(
   env: Env,
   event: WatchedEvent,
-  snapshot: PriceSnapshot
+  snapshot: PriceSnapshot,
+  bypassCooldown = false
 ): Promise<void> {
   if (!event.alertsEnabled) return;
   if (snapshot.minPrice === null) return;
@@ -14,8 +14,14 @@ export async function checkAndAlert(
   const settings = await getSettings(env);
   if (!settings.ntfyTopic && settings.alertMethod !== "sms") return;
 
-  const lastAlert = await getLastAlertTime(env, event.slug, snapshot.source);
-  if (lastAlert && Date.now() - lastAlert < ALERT_COOLDOWN_MS) return;
+  // 0/unset = notify on every qualifying scrape. Only suppress repeats if
+  // the user has explicitly set a cooldown window, and never suppress a
+  // manually-triggered scrape — the user is actively checking right now.
+  const cooldownMs = (settings.alertCooldownMinutes ?? 0) * 60 * 1000;
+  if (cooldownMs > 0 && !bypassCooldown) {
+    const lastAlert = await getLastAlertTime(env, event.slug, snapshot.source);
+    if (lastAlert && Date.now() - lastAlert < cooldownMs) return;
+  }
 
   const eventDate = new Date(event.date).toLocaleDateString("en-US", {
     weekday: "long",

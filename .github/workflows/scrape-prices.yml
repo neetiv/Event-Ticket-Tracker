@@ -51,6 +51,7 @@ jobs:
         working-directory: scraper
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
+          TRIGGER_EVENT: ${{ github.event_name }}
         run: npm run scrape
 
       - name: Upload debug screenshots
