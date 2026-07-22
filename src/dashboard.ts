@@ -677,7 +677,7 @@ function renderSettingsView(container) {
   } else {
     wl.innerHTML = WATCHES.map(w => {
       const d = new Date(w.date).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-      return '<div class="watch-item"><div><strong>'+w.name+'</strong><br><span style="font-size:.75rem;color:#8a7265">'+w.venue+', '+w.city+' &middot; '+d+' &middot; Alert: '+(w.alertsEnabled?'&le;$'+w.maxPrice:'off')+'</span></div>'+
+      return '<div class="watch-item"><div><strong>'+w.name+'</strong><br><span style="font-size:.75rem;color:#8a7699">'+w.venue+', '+w.city+' &middot; '+d+' &middot; Alert: '+(w.alertsEnabled?'&le;$'+w.maxPrice:'off')+'</span></div>'+
         '<button class="btn btn-danger btn-sm" data-slug="'+w.slug+'">Remove</button></div>';
     }).join('');
     wl.querySelectorAll('button[data-slug]').forEach(btn => {
