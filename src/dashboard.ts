@@ -141,7 +141,7 @@ function buildHtml(watchData: any[], settings: any): string {
 <script>
 const WATCHES = ${JSON.stringify(watchData)};
 const SETTINGS = ${JSON.stringify(settings)};
-const SOURCE_LABELS = ${JSON.stringify({ "get-in": "Resale Get-In", "ticketmaster": "Ticketmaster" })};
+const SOURCE_LABELS = ${JSON.stringify(SOURCE_LABELS)};
 let activeView = '_search';
 let chart = null;
 
@@ -572,11 +572,22 @@ function renderChart(event) {
 // =============== SETTINGS VIEW ===============
 function renderSettingsView(container) {
   const curMethod = SETTINGS.alertMethod || 'ntfy';
+  const si = SETTINGS.scrapeIntervalMinutes || 60;
   container.innerHTML =
     '<h2>&#127800; Notification Settings</h2>'+
     '<div class="panel">'+
       '<div class="form-group" style="margin-bottom:12px"><label>Alert Method</label>'+
         '<select id="sMethod"><option value="ntfy"'+(curMethod==='ntfy'?' selected':'')+'>ntfy (push notifications)</option><option value="sms"'+(curMethod==='sms'?' selected':'')+'>SMS (text messages)</option><option value="both"'+(curMethod==='both'?' selected':'')+'>Both</option></select></div>'+
+      '<div class="form-group" style="margin-bottom:12px"><label>Resale Scrape Interval</label>'+
+        '<select id="sScrapeInterval">'+
+          '<option value="15"'+(si===15?' selected':'')+'>Every 15 minutes</option>'+
+          '<option value="30"'+(si===30?' selected':'')+'>Every 30 minutes</option>'+
+          '<option value="60"'+(si===60?' selected':'')+'>Every hour</option>'+
+          '<option value="120"'+(si===120?' selected':'')+'>Every 2 hours</option>'+
+          '<option value="240"'+(si===240?' selected':'')+'>Every 4 hours</option>'+
+          '<option value="360"'+(si===360?' selected':'')+'>Every 6 hours</option>'+
+        '</select>'+
+        '<div class="card-sub" style="margin-top:4px">GitHub Actions checks every 15 min and skips if it\'s not time yet. Increase frequency as event date gets closer.</div></div>'+
       '<div id="ntfySettings"'+(curMethod==='sms'?' class="hidden"':'')+'>'+
         '<div class="form-group" style="margin-bottom:10px"><label>ntfy Topic</label><input type="text" id="sNtfy" value="'+(SETTINGS.ntfyTopic||'')+'" placeholder="my-ticket-alerts">'+
           '<div class="card-sub" style="margin-top:4px">Install <a href="https://ntfy.sh" target="_blank">ntfy app</a> and subscribe to this topic.</div></div></div>'+
@@ -669,7 +680,7 @@ function renderSettingsView(container) {
   });
   document.getElementById('saveSettings').addEventListener('click', async () => {
     const method = document.getElementById('sMethod').value;
-    const s = {alertMethod:method, ntfyTopic:document.getElementById('sNtfy').value.trim(), smsGatewayEmail:document.getElementById('sSms').value.trim()||undefined, cityWatches};
+    const s = {alertMethod:method, ntfyTopic:document.getElementById('sNtfy').value.trim(), smsGatewayEmail:document.getElementById('sSms').value.trim()||undefined, cityWatches, scrapeIntervalMinutes:parseInt(document.getElementById('sScrapeInterval').value)};
     await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(s)});
     alert('Settings saved!');
   });

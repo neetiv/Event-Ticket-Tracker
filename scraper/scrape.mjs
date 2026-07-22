@@ -135,17 +135,13 @@ async function main() {
 
   await browser.close();
 
-  if (results.length > 0) {
-    console.log(`\nPosting ${results.length} price(s) to worker...`);
-    const res = await fetch(`${WORKER_URL}/api/ingest`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prices: results }),
-    });
-    console.log("Worker response:", JSON.stringify(await res.json()));
-  } else {
-    console.log("\nNo prices scraped");
-  }
+  console.log(`\nPosting ${results.length} price(s) to worker...`);
+  const res = await fetch(`${WORKER_URL}/api/ingest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prices: results }),
+  });
+  console.log("Worker response:", JSON.stringify(await res.json()));
 }
 
 main().catch((err) => {

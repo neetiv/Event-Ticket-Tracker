@@ -79,6 +79,15 @@ export async function setLastAlertTime(env: Env, slug: string, key: string): Pro
   await env.PRICE_DATA.put(`meta:lastAlert:${slug}:${key}`, new Date().toISOString(), { expirationTtl: TTL_SECONDS });
 }
 
+export async function getLastScrapeTime(env: Env): Promise<number | null> {
+  const val = await env.PRICE_DATA.get("meta:lastScrape");
+  return val ? parseInt(val) : null;
+}
+
+export async function setLastScrapeTime(env: Env): Promise<void> {
+  await env.PRICE_DATA.put("meta:lastScrape", String(Date.now()), { expirationTtl: TTL_SECONDS });
+}
+
 export async function getPriceHistory(env: Env, slug: string, source: string): Promise<PriceSnapshot[]> {
   const kv = env.PRICE_DATA;
   const indexVal = await kv.get(`index:timestamps:${slug}:${source}`);

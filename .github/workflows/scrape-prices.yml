@@ -1,14 +1,29 @@
 name: Scrape Ticket Prices
 
 on:
-  # schedule:
-  #   - cron: "*/15 * * * *"  # Uncomment to re-enable
-  workflow_dispatch: {}      # Manual trigger only
+  schedule:
+    # Runs every 15 min. Actual scrape frequency is controlled from the dashboard
+    # under Alerts & Settings → Resale Scrape Interval.
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}      # Also triggered from the dashboard "Scrape Prices" button
 
 jobs:
-  scrape:
+  check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check if scrape is due
+        id: check
+        run: |
+          RESULT=$(curl -sf "${{ secrets.WORKER_URL }}/api/should-scrape" || echo '{"shouldRun":true}')
+          echo "should_run=$(echo $RESULT | jq -r '.shouldRun')" >> $GITHUB_OUTPUT
+
+  scrape:
+    needs: check
+    if: github.event_name == 'workflow_dispatch' || needs.check.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -16,7 +31,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: scraper/package.json
+          cache-dependency-path: scraper/package-lock.json
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
@@ -26,7 +41,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: scraper
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright browsers
         working-directory: scraper

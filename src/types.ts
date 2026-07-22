@@ -32,6 +32,7 @@ export interface UserSettings {
   ntfyTopic: string;
   smsGatewayEmail?: string;
   cityWatches?: CityWatch[];
+  scrapeIntervalMinutes?: number;
 }
 
 export interface Env {

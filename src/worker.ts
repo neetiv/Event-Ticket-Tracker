@@ -1,6 +1,6 @@
 import { Env, WatchedEvent } from "./types";
 import { searchEvents, fetchEventPrice } from "./sources/ticketmaster";
-import { savePrice, getWatches, addWatch, removeWatch, getSettings, saveSettings } from "./storage";
+import { savePrice, getWatches, addWatch, removeWatch, getSettings, saveSettings, getLastScrapeTime, setLastScrapeTime } from "./storage";
 import { checkAndAlert, notifyNewEvents } from "./alerts";
 import { renderDashboard, handleApiPrices } from "./dashboard";
 import BG_BASE64 from "./bg";
@@ -79,7 +79,23 @@ export default {
     if (path === "/api/watches" && request.method === "POST") {
       const body = (await request.json()) as WatchedEvent;
       if (!body.slug || !body.name) return json({ error: "slug and name required" }, 400);
+      const watches = await getWatches(env);
+      const isNew = !watches.some((w) => w.slug === body.slug);
       await addWatch(env, body);
+      if (isNew && env.GITHUB_PAT) {
+        fetch(
+          "https://api.github.com/repos/neetiv/Event-Ticket-Tracker/actions/workflows/scrape-prices.yml/dispatches",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.GITHUB_PAT}`,
+              Accept: "application/vnd.github+json",
+              "User-Agent": "Event-Ticket-Tracker/1.0",
+            },
+            body: JSON.stringify({ ref: "main" }),
+          }
+        );
+      }
       return json({ ok: true });
     }
     const del = path.match(/^\/api\/watches\/([a-z0-9-]+)$/);
@@ -101,7 +117,16 @@ export default {
         if (w) await checkAndAlert(env, w, snap);
         saved++;
       }
+      await setLastScrapeTime(env);
       return json({ ok: true, saved });
+    }
+
+    if (path === "/api/should-scrape" && request.method === "GET") {
+      const settings = await getSettings(env);
+      const intervalMs = (settings.scrapeIntervalMinutes ?? 60) * 60 * 1000;
+      const lastScrape = await getLastScrapeTime(env);
+      const shouldRun = !lastScrape || (Date.now() - lastScrape) >= intervalMs;
+      return json({ shouldRun, lastRun: lastScrape ? new Date(lastScrape).toISOString() : null });
     }
 
     if (path === "/api/status") return json({ ok: true, timestamp: new Date().toISOString() });

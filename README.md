@@ -1,15 +1,24 @@
-# FIFA Ticket Tracker
+# Event Ticket Tracker
 
-**Live dashboard:** https://fifa-ticket-tracker.neeti-tickets.workers.dev
+**Live dashboard:** https://event-ticket-tracker.neeti-tickets.workers.dev
 
-Cloudflare Worker that monitors World Cup ticket prices on Ticketmaster and SeatGeek, stores price history, sends push notifications when prices drop below your target, and serves a live dashboard with trend charts.
+Cloudflare Worker that tracks ticket prices across Ticketmaster and resale markets, stores price history, and sends push notifications when prices drop below your target.
+
+## Features
+
+- Search and track any event on Ticketmaster
+- Monitors both official (Ticketmaster) and resale get-in prices
+- Price history charts per event
+- Alerts via ntfy.sh push notifications or SMS
+- City-level watch for newly announced events
+- Cron-triggered price checks every 15 minutes
 
 ## Setup
 
 ### 1. Prerequisites
 - [Node.js](https://nodejs.org/) (v18+)
 - Free [Cloudflare account](https://dash.cloudflare.com/sign-up)
-- Free [Ticketmaster API key](https://developer.ticketmaster.com/) (takes ~2 min to get)
+- Free [Ticketmaster API key](https://developer.ticketmaster.com/)
 - [ntfy app](https://ntfy.sh/) on your phone(s)
 
 ### 2. Install dependencies
@@ -21,80 +30,58 @@ npm install
 ```bash
 npx wrangler kv namespace create PRICE_DATA
 ```
-Copy the `id` from the output and paste it into `wrangler.toml` replacing `REPLACE_WITH_KV_NAMESPACE_ID`.
+Copy the `id` from the output into `wrangler.toml`.
 
 ### 4. Set secrets
 ```bash
 npx wrangler secret put TICKETMASTER_API_KEY
-# Paste your Ticketmaster API key when prompted
+npx wrangler secret put NTFY_TOKEN        # optional, for protected ntfy topics
+npx wrangler secret put GITHUB_PAT        # optional, to trigger the resale scraper
 ```
 
-Optional:
-```bash
-npx wrangler secret put NTFY_TOKEN        # if using a password-protected ntfy topic
-npx wrangler secret put SMS_GATEWAY_EMAIL  # e.g. 2065551234@tmomail.net
-```
-
-### 5. Subscribe to alerts on your phone
-Open the ntfy app → subscribe to the topic in `wrangler.toml` (default: `fifa-egypt-iran-tickets`). Do this on every device you want alerts on.
+### 5. Subscribe to alerts
+Open the ntfy app and subscribe to your topic (default: `ticket-tracker`).
 
 ### 6. Deploy
 ```bash
 npm run deploy
 ```
 
-Your tracker is now live at `https://fifa-ticket-tracker.<your-subdomain>.workers.dev`.
-
 ## Usage
 
-| URL | What it does |
-|-----|-------------|
-| `/` | Dashboard with price charts and current prices |
-| `/api/prices/egypt-vs-iran` | JSON price history for a match |
-| `/api/status` | Health check: configured matches, fast mode status |
-| `POST /api/check` | Manually trigger a price check (same as cron) |
+Open the dashboard and use the **Explore Events** tab to search for events on Ticketmaster. Click **Track** to start monitoring a specific event — set your max price and the number of tickets you need.
 
-## Configuration
+You'll get an alert when any tracked source drops to or below your target price.
 
-### Adding matches
-Edit `src/config.ts` and add entries to the `MATCHES` array:
-```ts
-{
-  slug: "usa-vs-australia",
-  name: "USA vs Australia",
-  date: "2026-06-...",
-  venue: "...",
-  ticketmasterEventId: "...",    // from Ticketmaster event URL
-  seatgeekEventSlug: "...",      // from SeatGeek event URL
-  ticketsWanted: 2,
-  alerts: { enabled: false, maxPrice: 500 },
-}
-```
-Then redeploy: `npm run deploy`.
+### Resale prices (get-in scraper)
 
-### Check frequency
-The cron runs every 5 minutes. Before June 21, the worker skips 2 of 3 runs (effective: every 15 min). From June 21 onward, it runs every 5 min. This is controlled by `FAST_MODE_START` in `src/config.ts`.
+Resale "get-in" prices are fetched by a Playwright scraper that runs via GitHub Actions. From the dashboard, click **Scrape Prices** on any tracked event to trigger it. Requires a `GITHUB_PAT` secret with `repo` scope.
 
-### Alert threshold
-Set `alerts.maxPrice` per match in `src/config.ts`. Alerts have a 2-hour cooldown per source to avoid spam. The cooldown is configured via `ALERT_COOLDOWN_MS` in `src/config.ts`.
+## API
 
-### Dry run mode
-Set `DRY_RUN = "true"` in `wrangler.toml` to log alerts to the console instead of sending them. Useful for testing.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Dashboard |
+| `GET` | `/api/watches` | List tracked events |
+| `POST` | `/api/watches` | Add or update a tracked event |
+| `DELETE` | `/api/watches/:slug` | Remove a tracked event |
+| `GET` | `/api/prices/:slug` | Price history for an event |
+| `GET` | `/api/settings` | Get alert settings |
+| `POST` | `/api/settings` | Save alert settings |
+| `POST` | `/api/ingest` | Ingest price snapshots (used by scraper) |
+| `POST` | `/api/scrape` | Trigger the GitHub Actions scraper |
+| `POST` | `/api/check` | Manually trigger a price check |
+| `GET` | `/api/status` | Health check |
 
 ## Local development
 ```bash
 npm run dev
 ```
-Opens `http://localhost:8787`. Trigger a manual price check:
-```bash
-curl -X POST http://localhost:8787/api/check
-```
-Then refresh the dashboard to see results.
+Opens `http://localhost:8787`.
 
 ## Architecture
-- **Runtime:** Cloudflare Workers (free tier: 100K req/day)
-- **Storage:** Cloudflare KV (price history, keyed per match + source)
-- **Alerts:** ntfy.sh push notifications
-- **Dashboard:** Server-rendered HTML + Chart.js (no build step, no static hosting needed)
-- **Sources:** Ticketmaster Discovery API (official) + SeatGeek JSON endpoint
-- **Not automated:** FIFA.com (manual only — see project notes)
+- **Runtime:** Cloudflare Workers (TypeScript)
+- **Storage:** Cloudflare KV — price history, watched events, settings
+- **Price sources:** Ticketmaster Discovery API + Playwright scraper (ticketdata.com)
+- **Alerts:** ntfy.sh push notifications and/or SMS carrier gateway
+- **Dashboard:** Server-rendered HTML + Chart.js, no separate static hosting needed
