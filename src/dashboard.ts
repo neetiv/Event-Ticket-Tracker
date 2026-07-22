@@ -376,6 +376,7 @@ function renderTrackedView(container) {
             '<div class="form-group"><label>Alerts</label><select class="edit-alerts" data-idx="'+idx+'"><option value="true"'+(event.alertsEnabled?' selected':'')+'>On</option><option value="false"'+(!event.alertsEnabled?' selected':'')+'>Off</option></select></div>'+
             '<div><button class="btn btn-primary btn-sm save-watch" data-idx="'+idx+'">Save</button></div>'+
           '</div>'+
+          '<span class="save-status" data-idx="'+idx+'" style="font-size:.75rem;color:#8a7699"></span>'+
         '</div>'+
         '<button class="btn btn-danger btn-sm remove-watch" data-slug="'+event.slug+'">Remove from tracking</button>'+
       '</div>'+
@@ -400,13 +401,28 @@ function renderTrackedView(container) {
   container.querySelectorAll('.save-watch').forEach(btn => {
     btn.addEventListener('click', async () => {
       const i = parseInt(btn.dataset.idx);
-      const updated = Object.assign({}, WATCHES[i]);
+      const original = WATCHES[i];
+      const updated = Object.assign({}, original);
       delete updated.sources;
       updated.maxPrice = parseInt(container.querySelector('.edit-price[data-idx="'+i+'"]').value) || 100;
       updated.ticketsWanted = parseInt(container.querySelector('.edit-qty[data-idx="'+i+'"]').value) || 2;
       updated.alertsEnabled = container.querySelector('.edit-alerts[data-idx="'+i+'"]').value === 'true';
+      const willRescrape = updated.maxPrice !== original.maxPrice || updated.ticketsWanted !== original.ticketsWanted;
+
+      btn.disabled = true;
       await fetch('/api/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updated)});
-      location.reload();
+
+      if (!willRescrape) { location.reload(); return; }
+
+      btn.textContent = 'Saved — rescraping...';
+      const status = container.querySelector('.save-status[data-idx="'+i+'"]');
+      let sec = 60;
+      status.textContent = 'Refreshing in '+sec+'s';
+      const timer = setInterval(() => {
+        sec--;
+        status.textContent = 'Refreshing in '+sec+'s';
+        if (sec <= 0) { clearInterval(timer); location.reload(); }
+      }, 1000);
     });
   });
 

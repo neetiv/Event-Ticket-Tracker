@@ -67,9 +67,11 @@ export default {
       const body = (await request.json()) as WatchedEvent;
       if (!body.slug || !body.name) return json({ error: "slug and name required" }, 400);
       const watches = await getWatches(env);
-      const isNew = !watches.some((w) => w.slug === body.slug);
+      const existing = watches.find((w) => w.slug === body.slug);
+      const isNew = !existing;
+      const priceOrQtyChanged = !!existing && (existing.maxPrice !== body.maxPrice || existing.ticketsWanted !== body.ticketsWanted);
       await addWatch(env, body);
-      if (isNew && env.GITHUB_PAT) {
+      if ((isNew || priceOrQtyChanged) && env.GITHUB_PAT) {
         fetch(
           "https://api.github.com/repos/neetiv/Event-Ticket-Tracker/actions/workflows/scrape-prices.yml/dispatches",
           {
