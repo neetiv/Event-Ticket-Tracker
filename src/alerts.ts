@@ -1,5 +1,15 @@
 import { Env, WatchedEvent, PriceSnapshot, UserSettings } from "./types";
-import { getLastAlertTime, setLastAlertTime, getSettings } from "./storage";
+import { getLastAlertTime, setLastAlertTime, getSettings, logNtfyAttempt } from "./storage";
+
+function formatLogTime(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `${mm}/${dd}/${yy} ${hh}:${mi}:${ss}`;
+}
 
 export async function checkAndAlert(
   env: Env,
@@ -49,7 +59,7 @@ export async function checkAndAlert(
   const method = settings.alertMethod || "ntfy";
   const results = await Promise.all([
     (method === "ntfy" || method === "both") && settings.ntfyTopic
-      ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, snapshot.url, snapshot.minPrice <= event.maxPrice * 0.85 ? "urgent" : "high")
+      ? sendNtfy(env, event.slug, settings.ntfyTopic, env.NTFY_TOKEN, title, body, snapshot.url, snapshot.minPrice <= event.maxPrice * 0.85 ? "urgent" : "high")
       : null,
     (method === "sms" || method === "both") && settings.smsGatewayEmail
       ? sendSms(settings.smsGatewayEmail, title, snapshot.url)
@@ -96,7 +106,7 @@ export async function notifyNewEvents(
   const method = settings.alertMethod || "ntfy";
   await Promise.all([
     (method === "ntfy" || method === "both") && settings.ntfyTopic
-      ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, clickUrl, "default")
+      ? sendNtfy(env, `city-watch:${city}:${category}`, settings.ntfyTopic, env.NTFY_TOKEN, title, body, clickUrl, "default")
       : Promise.resolve(),
     (method === "sms" || method === "both") && settings.smsGatewayEmail
       ? sendSms(settings.smsGatewayEmail, title, clickUrl)
@@ -127,7 +137,7 @@ export async function notifyScrapeIssue(
   const method = settings.alertMethod || "ntfy";
   await Promise.all([
     (method === "ntfy" || method === "both") && settings.ntfyTopic
-      ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, event.url, "default")
+      ? sendNtfy(env, `scrape-status:${event.slug}`, settings.ntfyTopic, env.NTFY_TOKEN, title, body, event.url, "default")
       : Promise.resolve(),
     (method === "sms" || method === "both") && settings.smsGatewayEmail
       ? sendSms(settings.smsGatewayEmail, title, event.url)
@@ -135,7 +145,7 @@ export async function notifyScrapeIssue(
   ]);
 }
 
-async function sendNtfy(topic: string, token: string | undefined, title: string, body: string, url: string, priority: string): Promise<boolean> {
+async function sendNtfy(env: Env, logSlug: string, topic: string, token: string | undefined, title: string, body: string, url: string, priority: string): Promise<boolean> {
   const headers: Record<string, string> = {
     Title: title,
     Priority: priority,
@@ -153,9 +163,13 @@ async function sendNtfy(topic: string, token: string | undefined, title: string,
   const MAX_ATTEMPTS = 3;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const res = await fetch(`https://ntfy.sh/${topic}`, { method: "POST", headers, body });
-    if (res.ok) return true;
+    if (res.ok) {
+      await logNtfyAttempt(env, { time: formatLogTime(new Date()), slug: logSlug, attempt, maxAttempts: MAX_ATTEMPTS, httpStatus: res.status, success: true });
+      return true;
+    }
     const respBody = await res.text().catch(() => "");
     console.error(`ntfy error: ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS}) hasToken=${!!token} body=${respBody}`);
+    await logNtfyAttempt(env, { time: formatLogTime(new Date()), slug: logSlug, attempt, maxAttempts: MAX_ATTEMPTS, httpStatus: res.status, success: false, reason: respBody.slice(0, 200) });
     if (res.status !== 429 || attempt === MAX_ATTEMPTS) return false;
     await new Promise((r) => setTimeout(r, 2000 * attempt));
   }

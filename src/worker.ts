@@ -1,6 +1,6 @@
 import { Env, WatchedEvent } from "./types";
 import { searchEvents } from "./sources/ticketmaster";
-import { savePrice, getWatches, addWatch, removeWatch, getSettings, saveSettings, getLastScrapeTime, setLastScrapeTime, getScrapeBlocked, setScrapeBlocked } from "./storage";
+import { savePrice, getWatches, addWatch, removeWatch, getSettings, saveSettings, getLastScrapeTime, setLastScrapeTime, getScrapeBlocked, setScrapeBlocked, getNtfyLog } from "./storage";
 import { checkAndAlert, notifyNewEvents, notifyScrapeIssue } from "./alerts";
 import { renderDashboard, handleApiPrices } from "./dashboard";
 import BG_BASE64 from "./bg";
@@ -143,6 +143,11 @@ export default {
     }
 
     if (path === "/api/status") return json({ ok: true, timestamp: new Date().toISOString() });
+
+    if (path === "/api/ntfy-log" && request.method === "GET") {
+      const log = await getNtfyLog(env);
+      return json({ log: log.slice().reverse() });
+    }
 
     if (path === "/api/scrape" && request.method === "POST") {
       if (!env.GITHUB_PAT) return json({ error: "GitHub PAT not configured" }, 500);

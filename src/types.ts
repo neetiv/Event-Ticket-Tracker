@@ -36,6 +36,16 @@ export interface UserSettings {
   alertCooldownMinutes?: number;
 }
 
+export interface NtfyLogEntry {
+  time: string; // MM/DD/YY HH:MM:SS
+  slug: string;
+  attempt: number;
+  maxAttempts: number;
+  httpStatus: number;
+  success: boolean;
+  reason?: string;
+}
+
 export interface Env {
   PRICE_DATA: KVNamespace;
   TICKETMASTER_API_KEY: string;

@@ -1,6 +1,21 @@
-import { Env, PriceSnapshot, WatchedEvent, UserSettings } from "./types";
+import { Env, PriceSnapshot, WatchedEvent, UserSettings, NtfyLogEntry } from "./types";
 
 const TTL_SECONDS = 90 * 24 * 60 * 60;
+const NTFY_LOG_KEY = "log:ntfy";
+const NTFY_LOG_MAX = 300;
+
+export async function logNtfyAttempt(env: Env, entry: NtfyLogEntry): Promise<void> {
+  const existing = await env.PRICE_DATA.get(NTFY_LOG_KEY);
+  const log: NtfyLogEntry[] = existing ? JSON.parse(existing) : [];
+  log.push(entry);
+  const trimmed = log.length > NTFY_LOG_MAX ? log.slice(-NTFY_LOG_MAX) : log;
+  await env.PRICE_DATA.put(NTFY_LOG_KEY, JSON.stringify(trimmed), { expirationTtl: TTL_SECONDS });
+}
+
+export async function getNtfyLog(env: Env): Promise<NtfyLogEntry[]> {
+  const val = await env.PRICE_DATA.get(NTFY_LOG_KEY);
+  return val ? JSON.parse(val) : [];
+}
 
 export async function getWatches(env: Env): Promise<WatchedEvent[]> {
   const val = await env.PRICE_DATA.get("watches");

@@ -675,7 +675,9 @@ function renderSettingsView(container) {
     '<h2>&#127800; Tracked Events</h2>'+
     '<div class="panel" id="watchList"></div>'+
     '<h2>&#127800; Manual Actions</h2>'+
-    '<div class="panel"><button class="btn btn-primary" id="manualCheck">&#127804; Scrape All Prices</button> <span id="checkStatus" style="font-size:.82rem;color:#8a7699"></span></div>';
+    '<div class="panel"><button class="btn btn-primary" id="manualCheck">&#127804; Scrape All Prices</button> <span id="checkStatus" style="font-size:.82rem;color:#8a7699"></span></div>'+
+    '<h2>&#127800; Notification Log</h2>'+
+    '<div class="panel"><button class="btn btn-primary btn-sm" id="loadNtfyLog">Load Log</button><div id="ntfyLogBody" style="margin-top:10px"></div></div>';
 
   const wl = document.getElementById('watchList');
   if (WATCHES.length === 0) {
@@ -758,6 +760,31 @@ function renderSettingsView(container) {
       btn.textContent = '\\u{1F33C} Scrape All Prices';
       status.textContent = 'Error';
       btn.disabled = false;
+    }
+  });
+  document.getElementById('loadNtfyLog').addEventListener('click', async () => {
+    const body = document.getElementById('ntfyLogBody');
+    body.innerHTML = '<div class="empty">Loading...</div>';
+    try {
+      const res = await fetch('/api/ntfy-log');
+      const data = await res.json();
+      if (!data.log || data.log.length === 0) {
+        body.innerHTML = '<div class="empty">No log entries yet.</div>';
+        return;
+      }
+      body.innerHTML = '<div style="max-height:400px;overflow-y:auto">'+data.log.map(e => {
+        const color = e.success ? '#6a9e6f' : '#a13d4c';
+        const statusText = e.success ? 'Sent' : 'Failed ('+e.httpStatus+')';
+        return '<div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #e6dced;font-size:.75rem;align-items:center">'+
+          '<div style="color:#8a7699;white-space:nowrap">'+e.time+'</div>'+
+          '<div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+e.slug+'</div>'+
+          '<div style="color:#8a7699;white-space:nowrap">attempt '+e.attempt+'/'+e.maxAttempts+'</div>'+
+          '<div style="color:'+color+';font-weight:600;white-space:nowrap">'+statusText+'</div>'+
+        '</div>'+
+        (e.reason ? '<div style="font-size:.68rem;color:#c4b5cc;margin:-2px 0 4px">'+e.reason+'</div>' : '');
+      }).join('')+'</div>';
+    } catch(e) {
+      body.innerHTML = '<div class="empty">Failed to load log.</div>';
     }
   });
 }
