@@ -136,8 +136,18 @@ async function sendNtfy(topic: string, token: string | undefined, title: string,
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`https://ntfy.sh/${topic}`, { method: "POST", headers, body });
-  if (!res.ok) console.error(`ntfy error: ${res.status}`);
+  // ntfy.sh's public server rate-limits bursts of requests (429). When
+  // several tracked events qualify for an alert in the same scrape run,
+  // the requests land close together and can trip it — retry with backoff
+  // rather than silently dropping the notification.
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(`https://ntfy.sh/${topic}`, { method: "POST", headers, body });
+    if (res.ok) return;
+    console.error(`ntfy error: ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS})`);
+    if (res.status !== 429 || attempt === MAX_ATTEMPTS) return;
+    await new Promise((r) => setTimeout(r, 2000 * attempt));
+  }
 }
 
 async function sendSms(email: string, subject: string, url: string): Promise<void> {
