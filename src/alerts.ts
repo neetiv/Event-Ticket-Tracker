@@ -47,14 +47,22 @@ export async function checkAndAlert(
   }
 
   const method = settings.alertMethod || "ntfy";
-  await Promise.all([
+  const results = await Promise.all([
     (method === "ntfy" || method === "both") && settings.ntfyTopic
       ? sendNtfy(settings.ntfyTopic, env.NTFY_TOKEN, title, body, snapshot.url, snapshot.minPrice <= event.maxPrice * 0.85 ? "urgent" : "high")
-      : Promise.resolve(),
+      : null,
     (method === "sms" || method === "both") && settings.smsGatewayEmail
       ? sendSms(settings.smsGatewayEmail, title, snapshot.url)
-      : Promise.resolve(),
+      : null,
   ]);
+
+  // Only mark this alert as delivered (and start the cooldown) if a channel
+  // actually confirmed success — a silently-dropped ntfy 429 used to still
+  // log "Alert sent" and suppress the next real attempt.
+  if (!results.some((r) => r === true)) {
+    console.error(`Alert FAILED to send: ${event.slug} at $${snapshot.minPrice} — will retry on next scrape`);
+    return;
+  }
 
   await setLastAlertTime(env, event.slug, snapshot.source);
   console.log(`Alert sent: ${event.slug} at $${snapshot.minPrice}`);
@@ -127,7 +135,7 @@ export async function notifyScrapeIssue(
   ]);
 }
 
-async function sendNtfy(topic: string, token: string | undefined, title: string, body: string, url: string, priority: string): Promise<void> {
+async function sendNtfy(topic: string, token: string | undefined, title: string, body: string, url: string, priority: string): Promise<boolean> {
   const headers: Record<string, string> = {
     Title: title,
     Priority: priority,
@@ -136,20 +144,25 @@ async function sendNtfy(topic: string, token: string | undefined, title: string,
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  // ntfy.sh's public server rate-limits bursts of requests (429). When
-  // several tracked events qualify for an alert in the same scrape run,
-  // the requests land close together and can trip it — retry with backoff
-  // rather than silently dropping the notification.
+  // ntfy.sh's public server rate-limits anonymous publishers, and that
+  // limit is IP-based — Cloudflare Workers share egress IPs across every
+  // other app on the platform, so we can get 429s from traffic that isn't
+  // even ours. Retry with backoff for transient bursts, but a token
+  // (NTFY_TOKEN) that ties requests to an authenticated account is the
+  // real fix if this keeps happening.
   const MAX_ATTEMPTS = 3;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const res = await fetch(`https://ntfy.sh/${topic}`, { method: "POST", headers, body });
-    if (res.ok) return;
-    console.error(`ntfy error: ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS})`);
-    if (res.status !== 429 || attempt === MAX_ATTEMPTS) return;
+    if (res.ok) return true;
+    const respBody = await res.text().catch(() => "");
+    console.error(`ntfy error: ${res.status} (attempt ${attempt}/${MAX_ATTEMPTS}) hasToken=${!!token} body=${respBody}`);
+    if (res.status !== 429 || attempt === MAX_ATTEMPTS) return false;
     await new Promise((r) => setTimeout(r, 2000 * attempt));
   }
+  return false;
 }
 
-async function sendSms(email: string, subject: string, url: string): Promise<void> {
+async function sendSms(email: string, subject: string, url: string): Promise<boolean> {
   console.log(`[SMS] ${email}: "${subject}" — ${url}`);
+  return true;
 }
