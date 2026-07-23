@@ -264,7 +264,8 @@ function trackEvent(event) {
     '<div style="display:flex;gap:8px;justify-content:center;margin-top:16px">'+
       '<button class="btn btn-mint" id="trackConfirm" style="padding:10px 28px;font-size:.95rem">&#127804; Start Tracking</button>'+
       '<button class="btn" id="trackCancel" style="padding:10px 20px;background:#e6dced;color:#5a3d7a">Cancel</button>'+
-    '</div>',
+    '</div>'+
+    '<div id="trackStatus" style="text-align:center;font-size:.75rem;color:#8a7699;margin-top:8px"></div>',
     true
   );
 
@@ -284,8 +285,13 @@ function trackEvent(event) {
       alertsEnabled: true,
       url: event.url || 'https://www.ticketmaster.com/event/'+event.eventId,
     };
+    const confirmBtn = document.getElementById('trackConfirm');
+    const cancelBtn = document.getElementById('trackCancel');
+    confirmBtn.disabled = true;
+    cancelBtn.disabled = true;
+    confirmBtn.textContent = 'Tracking — scraping...';
     await fetch('/api/watches', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(watch)});
-    location.reload();
+    startRescrapeCountdown(document.getElementById('trackStatus'));
   });
 }
 
@@ -416,13 +422,7 @@ function renderTrackedView(container) {
 
       btn.textContent = 'Saved — rescraping...';
       const status = container.querySelector('.save-status[data-idx="'+i+'"]');
-      let sec = 60;
-      status.textContent = 'Refreshing in '+sec+'s';
-      const timer = setInterval(() => {
-        sec--;
-        status.textContent = 'Refreshing in '+sec+'s';
-        if (sec <= 0) { clearInterval(timer); location.reload(); }
-      }, 1000);
+      startRescrapeCountdown(status);
     });
   });
 
@@ -437,13 +437,7 @@ function renderTrackedView(container) {
         const data = await res.json();
         if (data.ok) {
           btn.textContent = 'Scraper running...';
-          let sec = 60;
-          status.textContent = 'Refreshing in '+sec+'s';
-          const timer = setInterval(() => {
-            sec--;
-            status.textContent = 'Refreshing in '+sec+'s';
-            if (sec <= 0) { clearInterval(timer); location.reload(); }
-          }, 1000);
+          startRescrapeCountdown(status);
         } else {
           btn.textContent = '\\u{1F33C} Scrape Prices';
           status.textContent = 'Failed — check GitHub PAT secret';
@@ -754,13 +748,7 @@ function renderSettingsView(container) {
       const data = await res.json();
       if (data.ok) {
         btn.textContent = 'Scraper running...';
-        let sec = 60;
-        status.textContent = 'Refreshing in '+sec+'s';
-        const timer = setInterval(() => {
-          sec--;
-          status.textContent = 'Refreshing in '+sec+'s';
-          if (sec <= 0) { clearInterval(timer); location.reload(); }
-        }, 1000);
+        startRescrapeCountdown(status);
       } else {
         btn.textContent = '\\u{1F33C} Scrape All Prices';
         status.textContent = 'Failed — is GitHub PAT configured?';
@@ -775,6 +763,16 @@ function renderSettingsView(container) {
 }
 
 // =============== UTILS ===============
+function startRescrapeCountdown(statusEl) {
+  let sec = 120;
+  statusEl.textContent = 'Refreshing in '+sec+'s';
+  const timer = setInterval(() => {
+    sec--;
+    statusEl.textContent = 'Refreshing in '+sec+'s';
+    if (sec <= 0) { clearInterval(timer); location.reload(); }
+  }, 1000);
+}
+
 function showModal(title, content, isHtml) {
   const existing = document.querySelector('.modal-bg');
   if (existing) existing.remove();
